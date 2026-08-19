@@ -1,4 +1,4 @@
-"""Seed the real MV Alaska 3-day/2-night food menu from the client's menu card.
+"""Seed the real MV THE CROWN 3-day/2-night food menu from the client's menu card.
 
 Items are a selection pool per (day, meal_type) — the chef picks the day's
 actual menu from these active items; this table is not a fixed daily plan.
@@ -68,7 +68,7 @@ def seed_food_menu(apps, schema_editor):
     Ship = apps.get_model("ships", "Ship")
     FoodMenuItem = apps.get_model("ships", "FoodMenuItem")
 
-    ship, _ = Ship.objects.get_or_create(name="MV Alaska")
+    ship, _ = Ship.objects.get_or_create(name="MV THE CROWN")
 
     for day, meal_type, items in MENU:
         for order, name in enumerate(items):
@@ -84,7 +84,7 @@ def seed_food_menu(apps, schema_editor):
 def unseed_food_menu(apps, schema_editor):
     Ship = apps.get_model("ships", "Ship")
     FoodMenuItem = apps.get_model("ships", "FoodMenuItem")
-    ship = Ship.objects.filter(name="MV Alaska").first()
+    ship = Ship.objects.filter(name="MV THE CROWN").first()
     if ship:
         all_names = [name for _, _, items in MENU for name in items]
         FoodMenuItem.objects.filter(ship=ship, name__in=all_names).delete()

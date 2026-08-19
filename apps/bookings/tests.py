@@ -17,7 +17,7 @@ class BookingBaseTestCase(TestCase):
     @classmethod
     def setUpTestData(cls):
         # get_or_create / distinct names: the seed migration (ships.0004)
-        # already creates MV Alaska and the standard room types in the test DB.
+        # already creates MV THE CROWN and the standard room types in the test DB.
         cls.ship = Ship.objects.create(name="Test Ship")
         cls.type_2p, _ = RoomType.objects.get_or_create(
             name="2-Person Room",

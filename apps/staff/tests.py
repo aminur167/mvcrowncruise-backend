@@ -468,7 +468,7 @@ class StaffOverviewTests(StaffApiTestCase):
         self.auth()
         response = self.client.get("/api/staff/overview/")
         by_ship = {row["ship_name"]: row for row in response.data["by_ship"]}
-        # A real "MV Alaska" ship is seeded by migration 0004 in every test DB,
+        # A real "MV THE CROWN" ship is seeded by migration 0004 in every test DB,
         # so other ships may also appear — just assert our two are present and correct.
         self.assertIn(self.ship.name, by_ship)
         self.assertIn("Second Ship", by_ship)

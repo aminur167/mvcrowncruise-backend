@@ -1,4 +1,4 @@
-﻿import tempfile
+import tempfile
 from decimal import Decimal
 from unittest.mock import patch
 
@@ -10,7 +10,7 @@ from django.utils import timezone
 from .models import Booking, Invoice, Payment
 from .test_payments import PaymentTestCase
 
-TEMP_MEDIA = tempfile.mkdtemp(prefix="mv_alaska_test_media_")
+TEMP_MEDIA = tempfile.mkdtemp(prefix="mv_crown_test_media_")
 
 
 @override_settings(MEDIA_ROOT=TEMP_MEDIA)

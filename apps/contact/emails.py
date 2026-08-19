@@ -25,7 +25,7 @@ def notify_recipient():
 
 def _ship_name():
     ship = Ship.objects.order_by("id").first()
-    return ship.name if ship else "MV Alaska"
+    return ship.name if ship else "MV THE CROWN"
 
 
 def _detail_rows(message):

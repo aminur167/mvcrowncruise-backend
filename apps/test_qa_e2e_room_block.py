@@ -32,7 +32,7 @@ class RoomBlockE2ETests(ThrottlelessTestMixin, APITransactionTestCase):
     def setUp(self):
         # Base reference data (a ship, room types, kid-pricing) — the equivalent
         # of an already-seeded system the admin logs into.
-        self.ship = Ship.objects.create(name="MV Alaska E2E")
+        self.ship = Ship.objects.create(name="MV THE CROWN E2E")
         self.t2, _ = RoomType.objects.get_or_create(
             name="2-Person Room",
             defaults=dict(max_adults=2, max_kids=1, base_price=Decimal("2000.00")),

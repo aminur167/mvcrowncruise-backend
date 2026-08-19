@@ -6,17 +6,17 @@ from .models import FoodMenuItem, Ship
 
 
 class ShipLayoutApiTests(ThrottlelessTestMixin, APITestCase):
-    """Runs against the real MV Alaska layout created by the seed migration
+    """Runs against the real MV THE CROWN layout created by the seed migration
     (ships.0004), which also applies to the test database."""
 
     def setUp(self):
-        self.ship = Ship.objects.get(name="MV Alaska")
+        self.ship = Ship.objects.get(name="MV THE CROWN")
 
     def test_layout_groups_31_rooms_by_floor(self):
         response = self.client.get(f"/api/ships/{self.ship.id}/layout/")
         self.assertEqual(response.status_code, 200)
         data = response.data
-        self.assertEqual(data["name"], "MV Alaska")
+        self.assertEqual(data["name"], "MV THE CROWN")
         self.assertEqual(data["total_rooms"], 31)
         floors = {f["floor_number"]: f["rooms"] for f in data["floors"]}
         self.assertEqual(set(floors.keys()), {1, 2})
@@ -38,22 +38,22 @@ class ShipLayoutApiTests(ThrottlelessTestMixin, APITestCase):
         Ship.objects.create(name="Retired Ship", status=Ship.Status.INACTIVE)
         response = self.client.get("/api/ships/")
         names = [s["name"] for s in response.data]
-        self.assertIn("MV Alaska", names)
+        self.assertIn("MV THE CROWN", names)
         self.assertNotIn("Retired Ship", names)
 
 
 class ShipFoodMenuApiTests(ThrottlelessTestMixin, APITestCase):
-    """Runs against the real MV Alaska menu created by the seed migration
+    """Runs against the real MV THE CROWN menu created by the seed migration
     (ships.0006), which also applies to the test database."""
 
     def setUp(self):
-        self.ship = Ship.objects.get(name="MV Alaska")
+        self.ship = Ship.objects.get(name="MV THE CROWN")
 
     def test_food_menu_groups_by_day_then_meal_type(self):
         response = self.client.get(f"/api/ships/{self.ship.id}/food-menu/")
         self.assertEqual(response.status_code, 200)
         data = response.data
-        self.assertEqual(data["name"], "MV Alaska")
+        self.assertEqual(data["name"], "MV THE CROWN")
         self.assertIn("Chef will select", data["note"])
         days = {d["day"]: d for d in data["days"]}
         self.assertEqual(set(days.keys()), {"day_1", "day_2", "day_3"})

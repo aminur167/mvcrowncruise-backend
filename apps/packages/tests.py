@@ -11,7 +11,7 @@ from .models import KidPricingRule, Package
 
 
 def make_package(**kwargs):
-    # Not "MV Alaska" — the seed migration (ships.0004) already creates that
+    # Not "MV THE CROWN" — the seed migration (ships.0004) already creates that
     # ship in the test database and Ship.name is unique.
     ship = kwargs.pop("ship", None) or Ship.objects.create(name="Test Ship")
     defaults = {

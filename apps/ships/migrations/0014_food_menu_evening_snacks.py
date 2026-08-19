@@ -31,7 +31,7 @@ def split_evening_snacks(apps, schema_editor):
     Ship = apps.get_model("ships", "Ship")
     FoodMenuItem = apps.get_model("ships", "FoodMenuItem")
 
-    ship = Ship.objects.filter(name="MV Alaska").first()
+    ship = Ship.objects.filter(name="MV THE CROWN").first()
     if ship is None:
         return
 
@@ -70,7 +70,7 @@ def merge_evening_snacks(apps, schema_editor):
     Ship = apps.get_model("ships", "Ship")
     FoodMenuItem = apps.get_model("ships", "FoodMenuItem")
 
-    ship = Ship.objects.filter(name="MV Alaska").first()
+    ship = Ship.objects.filter(name="MV THE CROWN").first()
     if ship is None:
         return
 

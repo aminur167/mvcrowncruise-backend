@@ -869,7 +869,7 @@ def generate_invoice_pdf(invoice):
     pdf.ln(3)
     pdf.set_font("NotoSans", "", 9)
     pdf.set_text_color(*NAVY)
-    pdf.cell(0, 6, "আপনার ভ্রমণ আনন্দময় হোক — Thank you for sailing with MV Alaska",
+    pdf.cell(0, 6, "আপনার ভ্রমণ আনন্দময় হোক — Thank you for sailing with MV THE CROWN",
              align="C", new_x="LMARGIN", new_y="NEXT")
     pdf.set_font("NotoSans", "", 7.5)
     pdf.set_text_color(*GREY)

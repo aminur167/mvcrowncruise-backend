@@ -5,4 +5,4 @@ from .settings import *  # noqa: F401,F403
 from .settings import DATABASES
 
 DATABASES["default"].setdefault("TEST", {})
-DATABASES["default"]["TEST"]["NAME"] = "test_mv_alaska_qa5fix"
+DATABASES["default"]["TEST"]["NAME"] = "test_mv_crown_qa5fix"

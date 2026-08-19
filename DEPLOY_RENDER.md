@@ -1,4 +1,4 @@
-# Render deploy — MV Alaska backend (temporary demo)
+# Render deploy — MV THE CROWN backend (temporary demo)
 
 Temporary demo deploy: Render (web service) + Supabase Postgres (Transaction
 Pooler, port 6543). Not the final production setup.
@@ -22,9 +22,9 @@ Or use the committed `render.yaml` via **New → Blueprint**.
 | `DATABASE_URL` | ✅ | Supabase **Transaction Pooler** connection string (host `...pooler.supabase.com`, port **6543**). Include `?sslmode=require`. |
 | `SECRET_KEY` | ✅ | Long random string. Render can auto-generate (`generateValue`). |
 | `DEBUG` | ✅ | `False`. |
-| `ALLOWED_HOSTS` | ✅ | Your Render host, e.g. `mv-alaska-backend.onrender.com` (comma-separated for multiple). |
+| `ALLOWED_HOSTS` | ✅ | Your Render host, e.g. `mvcrowncruise-backend.onrender.com` (comma-separated for multiple). |
 | `CORS_ALLOWED_ORIGINS` | ✅ | Frontend origin(s), e.g. `https://your-app.vercel.app` (comma-separated, **no trailing slash**). |
-| `BACKEND_URL` | ✅ | Full https URL of this service, e.g. `https://mv-alaska-backend.onrender.com`. Used to build SSLCommerz callback URLs. |
+| `BACKEND_URL` | ✅ | Full https URL of this service, e.g. `https://mvcrowncruise-backend.onrender.com`. Used to build SSLCommerz callback URLs. |
 | `FRONTEND_URL` | ✅ | Vercel app URL, e.g. `https://your-app.vercel.app`. Used for post-payment redirects. |
 | `DRF_NUM_PROXIES` | ✅ | Number of proxies in front of Django — `1` on Render. Getting this wrong means throttles key on the proxy's IP, so **every visitor shares one bucket**; re-check it after any hosting move. |
 | `SSLCOMMERZ_STORE_ID` | ✅ | SSLCommerz store id (sandbox for demo). |

@@ -111,7 +111,7 @@ CABINS = [
         "size_label": "44 m²",
         "sort_order": 3,
         "description": (
-            "The Family Suite is MV Alaska's grandest cabin — a full "
+            "The Family Suite is MV THE CROWN's grandest cabin — a full "
             "two-bedroom sanctuary with a spacious lounge, double balcony, and "
             "a dedicated butler. Designed for families and groups who want to "
             "share the Sundarbans adventure without sacrificing privacy or "
@@ -157,7 +157,7 @@ def seed_cabins(apps, schema_editor):
     RoomType = apps.get_model("ships", "RoomType")
     Cabin = apps.get_model("ships", "Cabin")
 
-    ship, _ = Ship.objects.get_or_create(name="MV Alaska")
+    ship, _ = Ship.objects.get_or_create(name="MV THE CROWN")
 
     for entry in CABINS:
         room_type = RoomType.objects.filter(name=entry["room_type_name"]).first()

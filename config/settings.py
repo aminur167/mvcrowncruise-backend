@@ -1,5 +1,5 @@
 """
-Django settings for the MV Alaska Ship Package Booking System.
+Django settings for the MV THE CROWN Ship Package Booking System.
 
 All secrets and environment-specific values come from `.env` via django-environ.
 See `.env.example` for the required variables.
@@ -442,7 +442,7 @@ PAYMENT_ESCALATED_RETRY_MINUTES = env.int(
 # HTTPS, so it is not blocked. To use it, set on the host:
 #   EMAIL_BACKEND=anymail.backends.resend.EmailBackend
 #   RESEND_API_KEY=<your key>
-#   DEFAULT_FROM_EMAIL=MV Alaska <onboarding@resend.dev>   (or your verified domain)
+#   DEFAULT_FROM_EMAIL=MV THE CROWN <onboarding@resend.dev>   (or your verified domain)
 
 EMAIL_BACKEND = env(
     "EMAIL_BACKEND", default="django.core.mail.backends.console.EmailBackend"
@@ -455,7 +455,7 @@ EMAIL_PORT = env.int("EMAIL_PORT", default=587)
 EMAIL_USE_TLS = env.bool("EMAIL_USE_TLS", default=True)
 EMAIL_HOST_USER = env("EMAIL_HOST_USER", default="")
 EMAIL_HOST_PASSWORD = env("EMAIL_HOST_PASSWORD", default="")
-DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", default="MV Alaska <noreply@localhost>")
+DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", default="MV THE CROWN <noreply@localhost>")
 
 # Anymail (Resend) — API key only from env. Harmless when the console/SMTP
 # backend is in use.

@@ -1,4 +1,4 @@
-"""Seed the real MV Alaska layout (31 rooms) from the client's room-layout PDF.
+"""Seed the real MV THE CROWN layout (31 rooms) from the client's room-layout PDF.
 
 Source: docs/Alaska Room Layout for corporate.pdf
 1st floor (200-series): 12 × 2-person, 5 × 4-person (206, 207, 208, 216, 217)
@@ -24,7 +24,7 @@ def seed_rooms(apps, schema_editor):
     Room = apps.get_model("ships", "Room")
     RoomType = apps.get_model("ships", "RoomType")
 
-    ship, _ = Ship.objects.get_or_create(name="MV Alaska")
+    ship, _ = Ship.objects.get_or_create(name="MV THE CROWN")
 
     # Ensure all room types exist (fresh databases won't have them yet).
     type_2p, _ = RoomType.objects.get_or_create(
@@ -59,7 +59,7 @@ def unseed_rooms(apps, schema_editor):
     """Reverse: only remove seeded rooms that have no bookings."""
     Ship = apps.get_model("ships", "Ship")
     Room = apps.get_model("ships", "Room")
-    ship = Ship.objects.filter(name="MV Alaska").first()
+    ship = Ship.objects.filter(name="MV THE CROWN").first()
     if ship:
         all_numbers = (
             FLOOR_1_2PAX + FLOOR_1_4PAX + FLOOR_2_2PAX + FLOOR_2_3PAX + FLOOR_2_4PAX

@@ -1,9 +1,9 @@
-# Render Blueprint — MV Alaska backend (temporary demo deploy).
+# Render Blueprint — MV THE CROWN backend (temporary demo deploy).
 # DB is external (Supabase), so no database block here.
 # Secrets are set in the Render dashboard, NOT committed (sync: false).
 services:
   - type: web
-    name: mv-alaska-backend
+    name: mvcrowncruise-backend
     runtime: python
     plan: free
     # Repo root is this backend/ folder (set Root Directory = backend on Render
