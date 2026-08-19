@@ -1,0 +1,30 @@
+Django>=5.1,<5.2
+djangorestframework>=3.15
+psycopg2-binary>=2.9
+django-environ>=0.11
+django-cors-headers>=4.0
+Pillow>=10.0
+requests>=2.31
+fpdf2>=2.7
+uharfbuzz>=0.39
+# Read the embedded fonts' cmaps so a glyph we cannot draw is caught, not
+# silently dropped from the invoice (a name in an unsupported script would
+# otherwise render as a blank field).
+fonttools>=4.50
+djangorestframework-simplejwt>=5.3
+# Deployment (Render + Supabase pooler)
+dj-database-url>=2.1
+gunicorn>=22.0
+whitenoise>=6.6
+# Email via HTTP API (cloud hosts block outbound SMTP ports, so Gmail SMTP
+# times out on Render and kills the worker — Resend uses HTTPS instead).
+resend>=2.0
+django-anymail[resend]>=11.0
+# Object storage (see the storage block in config/settings.py). Cloud hosts
+# have ephemeral disks — uploads vanish on redeploy unless they live off-host.
+# Public imagery -> Cloudinary (permanent CDN URLs, on-the-fly transforms);
+# invoice PDFs -> Backblaze B2 private bucket via its S3-compatible API,
+# served through short-lived presigned URLs.
+django-storages[s3]>=1.14
+cloudinary>=1.36
+django-cloudinary-storage>=0.3
