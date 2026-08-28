@@ -461,7 +461,7 @@ class StaffPackageSerializer(serializers.ModelSerializer):
             "booking_cutoff_datetime", "adult_price", "status", "is_booking_open",
             "min_deposit_percent", "balance_due_days_before_start",
             "duration_days", "duration_nights", "effective_days", "effective_nights",
-            "marketing_title", "marketing_description", "hero_image", "highlights",
+            "marketing_title", "marketing_description", "hero_image", "highlights", "rating",
             "bookings_count", "paid_total", "due_total", "rooms_total", "is_bookable",
         ]
 

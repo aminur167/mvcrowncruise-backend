@@ -40,6 +40,11 @@ class PackageListSerializer(serializers.ModelSerializer):
     foreigner_kid_surcharge = serializers.SerializerMethodField()
 
     hero_image = serializers.ImageField(read_only=True, use_url=True)
+    # SerializerMethodField, not a plain model field: this counts live
+    # inventory (booked/blocked rooms excluded) at read time, one query per
+    # package — fine for the public list's small, bounded set of open
+    # sailings (see get_queryset above).
+    available_rooms = serializers.SerializerMethodField()
 
     class Meta:
         model = Package
@@ -63,7 +68,12 @@ class PackageListSerializer(serializers.ModelSerializer):
             "marketing_description",
             "hero_image",
             "highlights",
+            "rating",
+            "available_rooms",
         ]
+
+    def get_available_rooms(self, package):
+        return package.available_rooms_count()
 
     def get_nights(self, package):
         return package.effective_nights()

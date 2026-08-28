@@ -114,6 +114,17 @@ class Package(models.Model):
         blank=True,
         help_text='List of short strings, e.g. ["Mangrove safari", "Sunset dinner"].',
     )
+    # Editorial score staff enter by hand (there is no review/booking-derived
+    # rating system) — shown on the public package card when set. Blank hides
+    # the rating rather than showing a fabricated one.
+    rating = models.DecimalField(
+        max_digits=2,
+        decimal_places=1,
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(Decimal("0.0")), MaxValueValidator(Decimal("5.0"))],
+        help_text="Displayed star rating out of 5, e.g. 4.8. Leave blank to hide.",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -336,6 +347,26 @@ class Package(models.Model):
         )
 
     is_bookable.boolean = True
+
+    def available_rooms_count(self):
+        """How many cabins on this sailing are still sellable right now —
+        the "N cabins free" badge on the public package card. Mirrors the
+        per-room availability logic in PackageRoomSerializer.get_availability:
+        a room counts as free only if it's in inventory, not admin-blocked,
+        and not held by an active booking."""
+        from django.db.models import Exists, OuterRef
+
+        from apps.bookings.models import BookingRoom
+
+        active_booking = BookingRoom.objects.filter(
+            package_id=OuterRef("package_id"), room_id=OuterRef("room_id"), is_active=True
+        )
+        return (
+            self.package_rooms.filter(is_available=True, is_blocked=False)
+            .annotate(is_booked=Exists(active_booking))
+            .filter(is_booked=False)
+            .count()
+        )
 
 
 class RoomBlocked(ValidationError):
