@@ -398,7 +398,7 @@ BOOKING_HOLD_MINUTES = env.int("BOOKING_HOLD_MINUTES", default=30)
 # Authority helpline numbers printed on the guide report & customer invoice
 # (comma-separated). Change these without touching code.
 AUTHORITY_PHONES = env(
-    "AUTHORITY_PHONES", default="01712-823482,01831-694307,01342-919795"
+    "AUTHORITY_PHONES", default="01831-694307,01342-919795"
 )
 
 # Where public /contact form submissions are emailed. This is the system-wide
