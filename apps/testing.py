@@ -6,6 +6,14 @@ from django.conf import settings
 from django.db import transaction
 from rest_framework.throttling import SimpleRateThrottle
 
+# A 1x1 GIF, for any test that has to put something in an ImageField — the
+# field only needs bytes it can identify as an image. Lives here rather than in
+# one app's test module because several of them now want it.
+PIXEL = (
+    b"GIF89a\x01\x00\x01\x00\x80\x00\x00\x00\x00\x00\xff\xff\xff!"
+    b"\xf9\x04\x01\x00\x00\x00\x00,\x00\x00\x00\x00\x01\x00\x01\x00\x00\x02\x02D\x01\x00;"
+)
+
 
 def create_booking(package, rooms, **booking_fields):
     """Create a Booking with one or more BookingRooms at the model layer.

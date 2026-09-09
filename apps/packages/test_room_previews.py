@@ -14,13 +14,7 @@ from rest_framework.test import APITestCase
 from apps.bookings.test_api import build_fixtures
 from apps.ships.imaging import THUMBNAIL_SPEC, thumbnail_url
 from apps.ships.models import Cabin, CabinImage, RoomImage
-from apps.testing import ThrottlelessTestMixin
-
-# A 1x1 GIF — ImageField only needs something it can identify as an image.
-PIXEL = (
-    b"GIF89a\x01\x00\x01\x00\x80\x00\x00\x00\x00\x00\xff\xff\xff!"
-    b"\xf9\x04\x01\x00\x00\x00\x00,\x00\x00\x00\x00\x01\x00\x01\x00\x00\x02\x02D\x01\x00;"
-)
+from apps.testing import PIXEL, ThrottlelessTestMixin
 
 
 class ThumbnailUrlTests(ThrottlelessTestMixin, APITestCase):

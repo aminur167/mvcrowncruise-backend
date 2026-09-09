@@ -2,11 +2,12 @@ from datetime import date
 from decimal import Decimal
 
 from django.contrib.auth import get_user_model
+from django.core.files.uploadedfile import SimpleUploadedFile
 from rest_framework.test import APITestCase
 
 from apps.bookings.models import Booking, BookingRoom, Payment
 from apps.bookings.test_api import build_fixtures
-from apps.testing import ThrottlelessTestMixin, create_booking
+from apps.testing import PIXEL, ThrottlelessTestMixin, create_booking
 
 User = get_user_model()
 
@@ -294,6 +295,72 @@ class StaffPackageApiTests(StaffApiTestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response["Content-Type"], "application/pdf")
         self.assertTrue(response.content.startswith(b"%PDF"))
+
+
+class StaffPackageHeroImageTests(StaffApiTestCase):
+    """The photograph the public package card shows.
+
+    The field, the public serializer and all four card sites already handled
+    it; what was missing was any way for staff to put a file in one, so every
+    card fell back to the same stock photograph.
+    """
+
+    def upload(self):
+        return self.client.patch(
+            f"/api/staff/packages/{self.package.id}/",
+            {"hero_image": SimpleUploadedFile("hero.gif", PIXEL, "image/gif")},
+            format="multipart",
+        )
+
+    def test_staff_can_upload_a_cover_photo(self):
+        self.auth()
+        response = self.upload()
+        self.assertEqual(response.status_code, 200)
+        self.package.refresh_from_db()
+        self.assertTrue(self.package.hero_image)
+
+    def test_the_upload_reaches_the_public_card(self):
+        # An upload nobody can see is not a feature — the point of the whole
+        # change is the picture on the public /packages card.
+        self.auth()
+        self.assertEqual(self.upload().status_code, 200)
+
+        self.client.credentials()  # drop the staff auth header
+        response = self.client.get("/api/packages/")
+        self.assertEqual(response.status_code, 200)
+        # The public list is a plain list, not a paginated envelope.
+        row = next(p for p in response.data if p["id"] == self.package.id)
+        self.assertTrue(row["hero_image"])
+
+    def test_a_cover_photo_can_be_removed_again(self):
+        self.auth()
+        self.assertEqual(self.upload().status_code, 200)
+
+        response = self.client.patch(
+            f"/api/staff/packages/{self.package.id}/",
+            {"hero_image": None},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.package.refresh_from_db()
+        self.assertFalse(self.package.hero_image)
+
+    def test_an_edit_that_never_mentions_the_photo_leaves_it_alone(self):
+        # The serializer's clear-on-null uses a sentinel default, because a
+        # plain .get() answers None for an absent key too — without it every
+        # ordinary edit would wipe a picture nobody touched.
+        self.auth()
+        self.assertEqual(self.upload().status_code, 200)
+
+        response = self.client.patch(
+            f"/api/staff/packages/{self.package.id}/",
+            {"marketing_title": "Renamed"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.package.refresh_from_db()
+        self.assertEqual(self.package.marketing_title, "Renamed")
+        self.assertTrue(self.package.hero_image)
 
 
 class StaffSettingsApiTests(StaffApiTestCase):
