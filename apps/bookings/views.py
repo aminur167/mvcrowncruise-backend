@@ -325,11 +325,24 @@ class InvoiceDownloadView(APIView):
         )
 
 
+def _redirect_field(request, name):
+    """Read a gateway redirect field from wherever this request carries it.
+
+    SSLCommerz normally POSTs a form to the return URLs, but not always: the
+    browser back button, a wallet app reopening the link, and a retry after a
+    dropped POST all arrive as GET with the fields in the query string. Reading
+    only ``request.data`` there yields nothing, and the result page is left with
+    no booking code to look the booking up by — the customer's money is taken
+    and the page shows them nothing.
+    """
+    return request.data.get(name) or request.query_params.get(name)
+
+
 def _frontend_redirect(result, request):
     """302 to the frontend result page. The page must fetch the booking by
     code for the real status — redirect data is presentation-only."""
     payment = None
-    tran_id = request.data.get("tran_id")
+    tran_id = _redirect_field(request, "tran_id")
     if tran_id:
         payment = Payment.objects.filter(transaction_id=tran_id).first()
     booking_code = payment.booking.booking_code if payment else ""
@@ -374,9 +387,16 @@ class PaymentIPNView(APIView):
         ipn_status = request.data.get("status")
 
         try:
-            if ipn_status in ("FAILED",):
+            # EXPIRED is a failure the gateway reports on a session the customer
+            # never completed; treated as FAILED so the cabin is released.
+            if ipn_status in ("FAILED", "EXPIRED"):
                 payment_service.mark_payment_closed(tran_id, Payment.Status.FAILED)
-            elif ipn_status in ("CANCELLED",):
+            # UNATTEMPTED means the session was created and never used at all.
+            # Left unhandled it fell through to process_payment_result(), which
+            # returns immediately on the missing val_id — so the payment stayed
+            # PENDING and its cabins stayed held indefinitely. That is worse on
+            # Render's free tier, where no cron runs to expire the hold later.
+            elif ipn_status in ("CANCELLED", "UNATTEMPTED"):
                 payment_service.mark_payment_closed(tran_id, Payment.Status.CANCELLED)
             else:
                 payment_service.process_payment_result(tran_id, val_id)
@@ -400,13 +420,23 @@ class PaymentIPNView(APIView):
 class PaymentSuccessView(APIView):
     """Browser lands here after paying. Runs the same idempotent processing
     as the IPN (this is the path that settles payments in local dev, where
-    the IPN can't reach localhost), then hands off to the frontend."""
+    the IPN can't reach localhost), then hands off to the frontend.
+
+    GET and POST behave identically: the gateway usually posts a form, but a
+    back button, a wallet app reopening the link or a retried redirect arrive
+    as GET, and answering 405 there shows an error page to a customer whose
+    money has already been taken. Neither verb is trusted — processing goes
+    through the authenticated Validation API either way.
+    """
 
     def post(self, request):
         payment_service.process_payment_result(
-            request.data.get("tran_id"), request.data.get("val_id")
+            _redirect_field(request, "tran_id"), _redirect_field(request, "val_id")
         )
         return _frontend_redirect("success", request)
+
+    def get(self, request):
+        return self.post(request)
 
 
 class PaymentFailView(APIView):
@@ -417,8 +447,11 @@ class PaymentFailView(APIView):
     stays on: each hit costs an outbound gateway call."""
 
     def post(self, request):
-        payment_service.close_payment_from_redirect(request.data.get("tran_id"))
+        payment_service.close_payment_from_redirect(_redirect_field(request, "tran_id"))
         return _frontend_redirect("fail", request)
+
+    def get(self, request):
+        return self.post(request)
 
 
 class PaymentCancelView(APIView):
@@ -426,5 +459,8 @@ class PaymentCancelView(APIView):
     on the gateway's confirmed answer."""
 
     def post(self, request):
-        payment_service.close_payment_from_redirect(request.data.get("tran_id"))
+        payment_service.close_payment_from_redirect(_redirect_field(request, "tran_id"))
         return _frontend_redirect("cancel", request)
+
+    def get(self, request):
+        return self.post(request)

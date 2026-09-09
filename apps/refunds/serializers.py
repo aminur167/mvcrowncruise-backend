@@ -127,9 +127,18 @@ class CancellationRequestCreateSerializer(serializers.Serializer):
             return attrs
 
         if not method:
-            raise serializers.ValidationError(
-                {"refund_method": "Tell us how you would like the refund sent."}
-            )
+            # The default route is a reversal at the gateway, back to the card
+            # or wallet the customer actually paid with. That destination is
+            # already known — asking for a bKash number to repeat it invites a
+            # typo into a payout, and turns a two-click cancellation into a
+            # form. Payout fields are stored blank; services.py resolves the
+            # method to GATEWAY.
+            attrs["refund_account_number"] = ""
+            attrs["refund_account_name"] = ""
+            attrs["bank_name"] = ""
+            attrs["branch_name"] = ""
+            return attrs
+
         if not attrs["refund_account_name"].strip():
             raise serializers.ValidationError(
                 {"refund_account_name": "Enter the account holder's name."}

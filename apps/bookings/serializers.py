@@ -305,7 +305,7 @@ class PaymentInitiateSerializer(serializers.Serializer):
     def validate(self, attrs):
         from django.utils import timezone
 
-        from .payment_service import minimum_first_payment
+        from .payment_service import assert_within_gateway_band, minimum_first_payment
 
         booking = self.context["booking"]
 
@@ -352,6 +352,13 @@ class PaymentInitiateSerializer(serializers.Serializer):
                 )
         else:
             attrs.pop("amount", None)  # full payment: server decides the amount
+            amount = booking.due_amount
+
+        # The gateway's per-transaction band, refused here rather than after the
+        # redirect. A full-ship booking can exceed the ceiling legitimately,
+        # which is why the FULL branch resolves its amount above instead of
+        # leaving this unchecked.
+        assert_within_gateway_band(amount)
         return attrs
 
 

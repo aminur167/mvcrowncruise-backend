@@ -12,6 +12,7 @@ import logging
 from decimal import Decimal, InvalidOperation
 
 import requests
+from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
 from rest_framework.exceptions import APIException, ValidationError
@@ -27,6 +28,39 @@ class PaymentGatewayUnavailable(APIException):
     status_code = 502
     default_detail = "Payment gateway is unavailable. Please try again."
     default_code = "gateway_unavailable"
+
+
+def assert_within_gateway_band(amount):
+    """Refuse an amount SSLCommerz will not accept on a single transaction.
+
+    The gateway rejects anything outside 10.00 - 500,000.00 BDT, but only when
+    the session is used — after the redirect, with the customer already off our
+    site and facing an error page we did not write and cannot explain.
+
+    A full-ship or large group booking passes the ceiling legitimately, so the
+    ceiling message names the way through (pay in instalments) instead of
+    reading as a refusal to take the money.
+    """
+    if amount < settings.SSLCOMMERZ_MIN_AMOUNT:
+        raise ValidationError(
+            {
+                "amount": (
+                    f"The payment gateway accepts a minimum of "
+                    f"{settings.SSLCOMMERZ_MIN_AMOUNT} BDT per transaction."
+                )
+            }
+        )
+    if amount > settings.SSLCOMMERZ_MAX_AMOUNT:
+        raise ValidationError(
+            {
+                "amount": (
+                    f"The payment gateway accepts a maximum of "
+                    f"{settings.SSLCOMMERZ_MAX_AMOUNT} BDT in a single "
+                    "transaction. Please pay this booking in instalments — "
+                    "choose 'Partial' and pay the rest from your booking page."
+                )
+            }
+        )
 
 
 def minimum_first_payment(booking):
@@ -199,6 +233,10 @@ def initiate_payment(booking, payment_type, amount=None):
                     }
                 )
 
+        # Applies to a FULL payment too, which skips the branch above — a
+        # full-ship booking is exactly the case that breaks the ceiling.
+        assert_within_gateway_band(amount)
+
         live = booking.payments.filter(status=Payment.Status.PENDING).first()
         if live is not None:
             if (
@@ -318,6 +356,7 @@ def process_payment_result(tran_id, val_id):
             logger.warning("Rejected gateway verdict for %s: %s", tran_id, data)
             payment.status = Payment.Status.FAILED
         payment.gateway_payload = data
+        payment.gateway_risk_level = _parse_risk_level(data)
         payment.save()  # SUCCESS → booking paid/due/status refresh (SUM-based)
 
         if payment.status == Payment.Status.SUCCESS:
@@ -348,6 +387,28 @@ def process_payment_result(tran_id, val_id):
                     booking.booking_code,
                 )
             else:
+                # SSLCommerz's integration document: on risk_level 1, hold the
+                # service and verify the customer before delivering it. The
+                # money stays credited — it is real, and refusing it would only
+                # strand a genuine customer. What is held is trust in it, so the
+                # booking goes to the staff review queue and someone calls
+                # before the guest sails.
+                if payment.is_risky:
+                    Payment.objects.filter(pk=payment.pk).update(
+                        needs_manual_review=True,
+                        last_reconcile_error=(
+                            f"{timezone.now():%Y-%m-%d %H:%M} — gateway risk_level "
+                            f"{payment.gateway_risk_level if payment.gateway_risk_level is not None else 'unknown'}"
+                            "; verify the customer before boarding."
+                        ),
+                    )
+                    logger.warning(
+                        "Payment %s on booking %s flagged risky by the gateway "
+                        "(risk_level=%s) — held for customer verification.",
+                        tran_id,
+                        booking.booking_code,
+                        payment.gateway_risk_level,
+                    )
                 # After commit so email trouble can never roll back the
                 # payment. Duplicate IPNs never reach here (SUCCESS gate
                 # above), so exactly one invoice per settled payment — and the
@@ -357,6 +418,21 @@ def process_payment_result(tran_id, val_id):
                     lambda: invoices.create_and_send_invoice(booking, payment=settled)
                 )
     return payment
+
+
+def _parse_risk_level(data):
+    """SSLCommerz's risk_level from a validation response, or None.
+
+    Anything we cannot read as an integer becomes None — UNKNOWN — rather than
+    a default of 0. A score we failed to parse must never be recorded as "the
+    gateway said this was safe" (see Payment.is_risky).
+    """
+    if not isinstance(data, dict):
+        return None
+    try:
+        return int(str(data.get("risk_level")).strip())
+    except (TypeError, ValueError):
+        return None
 
 
 def _verdict_is_valid(payment, tran_id, data):

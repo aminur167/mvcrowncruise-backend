@@ -8,6 +8,7 @@ See `.env.example` for the required variables.
 import os
 import sys
 from datetime import timedelta
+from decimal import Decimal
 from pathlib import Path
 
 import dj_database_url
@@ -388,6 +389,14 @@ SSLCOMMERZ_VALIDATION_URL = f"{_SSLCOMMERZ_BASE}/validator/api/validationserverA
 SSLCOMMERZ_TXN_QUERY_URL = (
     f"{_SSLCOMMERZ_BASE}/validator/api/merchantTransIDvalidationAPI.php"
 )
+
+# The band SSLCommerz accepts for a SINGLE transaction. Anything outside it is
+# refused by the gateway after the redirect — by which point the customer has
+# already left our site, so we check before creating a session. A large group
+# booking genuinely exceeds the ceiling (7 cabins can pass 500,000 BDT), and the
+# answer for those is instalments, not a dead end.
+SSLCOMMERZ_MIN_AMOUNT = Decimal(env("SSLCOMMERZ_MIN_AMOUNT", default="10.00"))
+SSLCOMMERZ_MAX_AMOUNT = Decimal(env("SSLCOMMERZ_MAX_AMOUNT", default="500000.00"))
 
 BACKEND_URL = env("BACKEND_URL", default="http://localhost:8000")
 FRONTEND_URL = env("FRONTEND_URL", default="http://localhost:5173")

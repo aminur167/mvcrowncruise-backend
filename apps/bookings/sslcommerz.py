@@ -15,6 +15,14 @@ class GatewayError(Exception):
     """Session creation or validation could not be completed."""
 
 
+#: Field lengths SSLCommerz's integration document specifies for the session
+#: request. Exceeding one has the whole session refused, with a message that
+#: does not name the offending field — so they are enforced here instead.
+_NAME_MAX = 50
+_EMAIL_MAX = 50
+_PHONE_MAX = 20
+
+
 #: Cardholder-data fields SSLCommerz returns that we neither use nor want to
 #: persist. The PAN is already masked by the gateway (PCI), but we still keep no
 #: card data at rest: it is surfaced to every staff user via the payment API and
@@ -44,9 +52,30 @@ def _strip_card_fields(data):
     return {key: value for key, value in data.items() if key not in _CARD_DATA_FIELDS}
 
 
+def _fit(value, limit):
+    """Trim a session field to the length SSLCommerz accepts.
+
+    The integration document caps several customer fields; an over-length value
+    has the whole session refused, so an ordinary long name would stop a booking
+    dead. Trimming is only safe for fields that are labels on a receipt — see
+    create_session for the one field that is refused rather than trimmed.
+    """
+    text = (value or "").strip()
+    return text[:limit]
+
+
 def create_session(payment):
     """Create a gateway checkout session; returns the GatewayPageURL."""
     booking = payment.booking
+    # An address that no longer identifies the customer is worse than a refused
+    # session: a shortened email is simply the wrong address, and the receipt
+    # and every later notice would go nowhere. Refuse it with an explanation.
+    if len(booking.email or "") > _EMAIL_MAX:
+        raise GatewayError(
+            f"The email address on this booking is longer than the {_EMAIL_MAX} "
+            "characters the payment gateway accepts. Please use a shorter "
+            "address and try again."
+        )
     payload = {
         "store_id": settings.SSLCOMMERZ_STORE_ID,
         "store_passwd": settings.SSLCOMMERZ_STORE_PASSWORD,
@@ -57,14 +86,17 @@ def create_session(payment):
         "fail_url": f"{settings.BACKEND_URL}/api/payments/fail/",
         "cancel_url": f"{settings.BACKEND_URL}/api/payments/cancel/",
         "ipn_url": f"{settings.BACKEND_URL}/api/payments/ipn/",
-        "cus_name": booking.customer_name,
+        "cus_name": _fit(booking.customer_name, _NAME_MAX),
         "cus_email": booking.email,
-        "cus_phone": booking.phone,
+        "cus_phone": _fit(booking.phone, _PHONE_MAX),
         "cus_add1": "N/A",
         "cus_city": "N/A",
         "cus_country": "Bangladesh",
         "shipping_method": "NO",
-        "num_of_item": 1,
+        # Floored at 1: a booking with no rooms attached would send 0, and the
+        # gateway refuses the session outright — costing the customer their
+        # payment to buy us an accurate line on a report.
+        "num_of_item": max(1, booking.rooms.count()),
         "product_name": f"Ship package {booking.booking_code}",
         "product_category": "Travel",
         # "general" needs no vertical-specific extra fields (travel-vertical
@@ -150,7 +182,11 @@ def verify_ipn_signature(data):
     keys = [key for key in str(verify_key).split(",") if key]
     if not keys:
         return False
-    pairs = {key: str(data.get(key, "")) for key in keys}
+    # verify_key NAMES the fields covered by the hash; one that is absent from
+    # the POST is not hashed at all. Defaulting it to "" instead adds a bare
+    # "key=" term the gateway never signed, and every such IPN is rejected as
+    # forged — the payment then sits PENDING while the gateway retries.
+    pairs = {key: str(data[key]) for key in keys if key in data}
     pairs["store_passwd"] = hashlib.md5(
         settings.SSLCOMMERZ_STORE_PASSWORD.encode()
     ).hexdigest()

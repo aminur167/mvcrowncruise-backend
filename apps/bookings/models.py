@@ -630,6 +630,20 @@ class Payment(models.Model):
     # outage ends, and a payment we stop asking about holds its cabin out of
     # inventory forever. This is the key that back-off is measured from.
     last_reconcile_at = models.DateTimeField(null=True, blank=True)
+    # SSLCommerz's own fraud score for the settled transaction. Their
+    # integration document instructs the merchant to hold the service and
+    # verify the customer when this is 1 — guidance that was previously read
+    # off the response and discarded. NULL means the gateway did not report a
+    # score, or reported one we could not parse; that reads as UNKNOWN and is
+    # never treated as safe (see is_risky).
+    gateway_risk_level = models.SmallIntegerField(
+        null=True,
+        blank=True,
+        help_text=(
+            "SSLCommerz risk_level: 0 = normal, 1 = risky (verify the customer "
+            "before delivering the service). Blank if the gateway reported none."
+        ),
+    )
     gateway_payload = models.JSONField(
         default=dict, blank=True, help_text="Raw gateway (SSLCommerz) response."
     )
@@ -670,6 +684,17 @@ class Payment(models.Model):
 
     def __str__(self):
         return f"{self.booking.booking_code}: {self.amount} ({self.status})"
+
+    @property
+    def is_risky(self):
+        """Whether SSLCommerz flagged this transaction for verification.
+
+        Only an explicit 0 clears a payment. A missing or unparseable score is
+        UNKNOWN, and unknown is not safe — the cost of reviewing a good booking
+        is a phone call, while the cost of shipping a fraudulent one is the
+        chargeback plus the voyage.
+        """
+        return self.gateway_risk_level != 0
 
     def clean(self):
         if self.amount is not None and self.amount <= 0:

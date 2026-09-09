@@ -22,7 +22,7 @@ from django.utils import timezone
 from apps.bookings.models import Booking
 
 from . import policy
-from .models import CancellationRequest, Refund, RefundStatusLog
+from .models import CancellationRequest, PayoutMethod, Refund, RefundStatusLog
 
 ZERO = Decimal("0.00")
 
@@ -146,7 +146,12 @@ def approve_cancellation(request, *, user, note=""):
             cancellation_charge=request.cancellation_charge,
             policy_snapshot=request.policy_snapshot,
             cancellation_request=request,
-            method=request.refund_method,
+            # No method chosen means the customer accepted the default: a
+            # reversal raised at the gateway, back to the card or wallet that
+            # paid. Refunds are issued from the SSLCommerz merchant panel
+            # against the original transaction, so that destination needs no
+            # account details from the customer.
+            method=request.refund_method or PayoutMethod.GATEWAY,
             account_name=request.refund_account_name,
             account_number=request.refund_account_number,
             bank_name=request.bank_name,
@@ -270,7 +275,7 @@ def staff_cancel_booking(
             cancellation_charge=charge,
             policy_snapshot=snapshot,
             cancellation_request=request,
-            method=refund_method,
+            method=refund_method or PayoutMethod.GATEWAY,
             account_name=refund_account_name,
             account_number=refund_account_number,
             bank_name=bank_name,

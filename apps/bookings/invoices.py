@@ -309,7 +309,7 @@ def _cancellation_money_paragraph(booking, paid):
     you". The vague wording is kept only as the genuine fallback: cancellations
     raised straight from the Django admin, where no one has decided the numbers.
     """
-    from apps.refunds.models import Refund
+    from apps.refunds.models import PayoutMethod, Refund
 
     refund = (
         booking.refunds.exclude(status=Refund.Status.VOID)
@@ -331,16 +331,28 @@ def _cancellation_money_paragraph(booking, paid):
         lines.append(f"Cancellation charge:  {refund.cancellation_charge} BDT")
     lines.append(f"Refund due to you:    {refund.amount} BDT")
     body = "\n".join(lines) + "\n\n"
-    if refund.account_number:
+    # One figure, and it covers the customer's own bank leg as well as ours.
+    # Quoting our processing time and leaving the bank's on top is two numbers,
+    # and the second arrives as an unwelcome surprise.
+    window = (
+        f"within {sla_days} working days — that window covers your bank or "
+        "wallet provider's own processing as well as ours"
+    )
+    if refund.method == PayoutMethod.GATEWAY and not refund.account_number:
+        body += (
+            "We will reverse this through our payment gateway, back to the "
+            f"card or mobile wallet you paid with, {window}. There is nothing "
+            "you need to send us.\n\n"
+        )
+    elif refund.account_number:
         body += (
             f"We will send this to your {refund.get_method_display()} account "
-            f"ending {refund.account_number[-4:]} within {sla_days} working "
-            "days.\n\n"
+            f"ending {refund.account_number[-4:]}, {window}.\n\n"
         )
     else:
         body += (
             f"Our team will contact you on {booking.phone} to arrange the "
-            f"payout, within {sla_days} working days.\n\n"
+            f"payout, {window}.\n\n"
         )
     return body
 
