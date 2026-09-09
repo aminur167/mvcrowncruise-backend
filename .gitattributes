@@ -1,0 +1,23 @@
+# Line endings.
+#
+# core.autocrlf=true on the Windows machines this is developed on, so git
+# checks files out with CRLF. Python tooling and the Linux host both expect LF,
+# and a shell script or Procfile that reaches Render with CRLF fails to run at
+# all. Committed content was always LF; this stops the checkout rewriting it.
+* text=auto eol=lf
+
+# Binary assets git must never touch. Fonts especially: the invoice PDFs are
+# rendered with the bundled Bengali faces, and a .ttf that has been through
+# line-ending normalisation is a font that no longer parses.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.sqlite3 binary
+*.ttf binary
+*.otf binary
+*.woff binary
+*.woff2 binary

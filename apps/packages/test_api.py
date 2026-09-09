@@ -29,6 +29,10 @@ PACKAGE_LIST_FIELDS = {
     "marketing_description",
     "hero_image",
     "highlights",
+    # Both are on the public card: the star rating, and the cabins left, which
+    # is what drives its "only N rooms left" urgency line.
+    "rating",
+    "available_rooms",
 }
 ROOM_FIELDS = {
     "id",
