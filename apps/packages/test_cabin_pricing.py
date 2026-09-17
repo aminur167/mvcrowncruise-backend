@@ -93,6 +93,84 @@ class CabinPricingTests(ThrottlelessTestMixin, APITestCase):
         self.assertEqual(bd["total"], Decimal("6000.00"))
 
 
+class RoomBasePriceTests(ThrottlelessTestMixin, APITestCase):
+    """`RoomType.base_price` is a per-CABIN amount, not a per-person one.
+
+    It is added once, on top of the berth fare, and is the field most likely to
+    be mistaken for a per-head charge — which would multiply silently by every
+    guest on every booking.
+
+    The 2-berth fixture: 2000 base, 3000 per adult.
+    """
+
+    def setUp(self):
+        self.ship, self.type_2p, self.type_4p, _, _, self.package = build_fixtures(
+            ship_name="Base Price Ship"
+        )
+
+    def price(self, adults, room_type=None):
+        return price_breakdown(room_type or self.type_2p, self.package, adults, [])
+
+    def test_the_base_price_is_added_once_per_cabin(self):
+        bd = self.price(2)
+        self.assertEqual(bd["room_base"], Decimal("2000.00"))
+        self.assertEqual(bd["adults_subtotal"], Decimal("6000.00"))
+        self.assertEqual(bd["total"], Decimal("8000.00"))
+
+    def test_the_base_price_does_not_scale_with_the_party(self):
+        """One guest or four, the room charge is the same amount once. If this
+        ever multiplies, every booking on the ship is silently overcharged."""
+        one = self.price(1, room_type=self.type_4p)
+        four = self.price(4, room_type=self.type_4p)
+        self.assertEqual(one["room_base"], four["room_base"])
+        self.assertEqual(one["room_base"], Decimal("3500.00"))
+        # Only the berth fare moved: 3 more adults at 3000.
+        self.assertEqual(four["total"] - one["total"], Decimal("9000.00"))
+
+    def test_it_is_added_once_on_a_whole_cabin_too(self):
+        """Selling by capacity changes how many BERTHS are charged. It must not
+        change how many times the room charge is applied."""
+        self.ship.meal_allowance = Decimal("500.00")
+        self.ship.save()
+        bd = self.price(1, room_type=self.type_4p)
+        # 3500 room + 4 berths x 3000 - 3 empty x 500 = 14000.
+        self.assertEqual(bd["room_base"], Decimal("3500.00"))
+        self.assertEqual(bd["total"], Decimal("14000.00"))
+
+    def test_a_zero_base_price_adds_nothing(self):
+        """The case this client actually runs in: the field is folded away in
+        the dashboard precisely because it contributes nothing here."""
+        self.type_2p.base_price = Decimal("0.00")
+        self.type_2p.save()
+        self.assertEqual(self.price(2)["total"], Decimal("6000.00"))
+
+    def test_changing_it_does_not_reprice_a_booking_already_made(self):
+        """Each booking freezes its own snapshot. Editing a room type is not a
+        way to re-bill people who have already paid."""
+        room = self.ship.rooms.get(room_type=self.type_2p)
+        booking = create_booking(self.package, [{"room": room, "adult_count": 2}])
+        self.assertEqual(booking.total_amount, Decimal("8000.00"))
+
+        self.type_2p.base_price = Decimal("9999.00")
+        self.type_2p.save()
+
+        snap = restore_breakdown(booking.rooms.first().price_snapshot)
+        self.assertEqual(snap["room_base"], Decimal("2000.00"))
+        self.assertEqual(snap["total"], Decimal("8000.00"))
+
+    def test_the_room_type_is_not_tied_to_a_ship(self):
+        """Not a preference — the schema. RoomType has no ship, and its name is
+        unique, so a base price set on "2-Person Room" reaches every cabin of
+        that type on every ship. The dashboard has to say so; a single
+        expensive cabin needs its own room type, not this field.
+        """
+        self.assertFalse(
+            any(f.name == "ship" for f in self.type_2p._meta.get_fields()),
+            "RoomType gained a ship FK — the warning in Room Settings is now wrong",
+        )
+        self.assertTrue(self.type_2p._meta.get_field("name").unique)
+
+
 class CabinPricingSnapshotTests(ThrottlelessTestMixin, APITestCase):
     def setUp(self):
         self.ship, self.type_2p, _, self.room, _, self.package = build_fixtures(
