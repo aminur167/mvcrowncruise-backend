@@ -712,10 +712,24 @@ def generate_invoice_pdf(invoice):
         charge_rows.append(
             (f"Room {br.room.room_number} — base price", breakdown["room_base"])
         )
+        # "berths" and not "adults" whenever the two differ: the customer is
+        # being billed for a cabin, and a line reading "Adult fare (2 × 3000)"
+        # against one traveller is the kind of thing that starts a phone call.
+        charged = breakdown["charged_adults"]
+        label = "Adult fare" if charged == breakdown["adult_count"] else "Cabin fare"
+        unit = "" if charged == breakdown["adult_count"] else " berths"
         charge_rows.append((
-            f"    Adult fare ({breakdown['adult_count']} × {breakdown['adult_price']})",
+            f"    {label} ({charged}{unit} × {breakdown['adult_price']})",
             breakdown["adults_subtotal"],
         ))
+        # The other half of that bargain, immediately under it, negative.
+        if breakdown["empty_berth_discount"]:
+            berths = breakdown["empty_berth_count"]
+            charge_rows.append((
+                f"    Unoccupied berth allowance ({berths} × "
+                f"{breakdown['meal_allowance']})",
+                -breakdown["empty_berth_discount"],
+            ))
         charge_rows.extend(
             (f"    Kid fare (age {kid['age']})", kid["charge"])
             for kid in breakdown["kids"]

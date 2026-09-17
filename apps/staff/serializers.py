@@ -80,6 +80,7 @@ class StaffShipSerializer(serializers.ModelSerializer):
             # Fare policy, edited from Room Settings — where staff go to change
             # what things cost — rather than from the Settings page.
             "default_adult_price",
+            "meal_allowance",
             "group_min_pax",
             "refund_sla_days",
         ]

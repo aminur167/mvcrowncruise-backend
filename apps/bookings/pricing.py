@@ -20,8 +20,12 @@ def price_breakdown(
 ):
     """Full price breakdown, every amount a Decimal.
 
-    Room total = base_price + (adults × adult_price) + Σ kid tier charges
-                 + foreign-national surcharges.
+    Cabin total = base_price
+                + (adult capacity × adult_price)   ← the whole cabin, not heads
+                − (empty berths × meal allowance)
+                + Σ kid tier charges
+                + foreign-national surcharges
+                − the sailing's offer
 
     `foreign_adults` / `foreign_kids` are the counts of guests already included
     in adult_count / kid_ages who are foreign nationals — a SUBSET, not extra
@@ -31,7 +35,28 @@ def price_breakdown(
     Callers pass the counts rather than the guest list because pricing has no
     business reading passport data.
     """
-    adults_subtotal = package.adult_price * adult_count
+    # Two pricing models, chosen per ship (see Ship.meal_allowance).
+    #
+    # Selling cabins whole: the room leaves inventory whether one person takes
+    # it or four, so the fare is its full adult capacity. What a missing guest
+    # genuinely saves the operator is their food for the trip, and that much
+    # comes back — once per empty berth, for the whole package rather than per
+    # night. The two figures stay separate in the breakdown rather than folded
+    # into one adjusted rate, because the invoice has to show the customer both
+    # halves of that bargain.
+    #
+    # Selling per head: the original model, and what every ship does until
+    # staff deliberately switch it on. `meal_allowance` being NULL is what says
+    # so — null is not zero here.
+    if package.ship.sells_whole_cabins:
+        charged_adults = max(adult_count, room_type.max_adults)
+        meal_allowance = package.ship.meal_allowance
+    else:
+        charged_adults = adult_count
+        meal_allowance = ZERO
+    empty_berths = charged_adults - adult_count
+    empty_berth_discount = meal_allowance * empty_berths
+    adults_subtotal = package.adult_price * charged_adults
     # Load every kid-pricing tier ONCE, not one query per child: the rules are a
     # tiny, rarely-changing admin table, and pricing a 2-kid booking used to fire
     # a separate KidPricingRule query per child (QA phase8b F4). Resolve each age
@@ -55,15 +80,34 @@ def price_breakdown(
     # path goes through — the quote, Booking.reprice() and the invoice. Applied
     # at the call sites instead, there would be a path by which a customer is
     # shown an offer on the card and charged without it.
-    subtotal = (
-        room_type.base_price + adults_subtotal + kids_subtotal + foreigner_subtotal
+    #
+    # Floored at zero BEFORE the offer: a berth allowance larger than the cabin
+    # must give a free cabin, never a negative one, and a percentage off a
+    # negative number would hand money back.
+    subtotal = max(
+        ZERO,
+        room_type.base_price
+        + adults_subtotal
+        + kids_subtotal
+        + foreigner_subtotal
+        - empty_berth_discount,
     )
     discount = package.discount_on(subtotal)
     return {
         "room_base": room_type.base_price,
         "adult_price": package.adult_price,
+        # How many are actually travelling, and how many berths were charged
+        # for. They differ whenever a cabin is taken under capacity, and the
+        # invoice needs both: one is who boards, the other is what was billed.
         "adult_count": adult_count,
+        "charged_adults": charged_adults,
         "adults_subtotal": adults_subtotal,
+        "empty_berth_count": empty_berths,
+        # The rate is frozen alongside the amount, like every other rate here:
+        # it is admin-editable, and the invoice must still print the figure the
+        # customer was actually given.
+        "meal_allowance": meal_allowance,
+        "empty_berth_discount": empty_berth_discount,
         "kids": kids,
         "kids_subtotal": kids_subtotal,
         # Rates are carried alongside the counts so the invoice can print
@@ -164,7 +208,11 @@ def snapshot_breakdown(breakdown, room_number=None):
         "room_base": str(breakdown["room_base"]),
         "adult_price": str(breakdown["adult_price"]),
         "adult_count": breakdown["adult_count"],
+        "charged_adults": breakdown.get("charged_adults", breakdown["adult_count"]),
         "adults_subtotal": str(breakdown["adults_subtotal"]),
+        "empty_berth_count": breakdown.get("empty_berth_count", 0),
+        "meal_allowance": str(breakdown.get("meal_allowance", ZERO)),
+        "empty_berth_discount": str(breakdown.get("empty_berth_discount", ZERO)),
         "kids": [
             {"age": kid["age"], "charge": str(kid["charge"])}
             for kid in breakdown["kids"]
@@ -209,7 +257,13 @@ def restore_breakdown(snapshot):
         "room_base": Decimal(snapshot["room_base"]),
         "adult_price": Decimal(snapshot["adult_price"]),
         "adult_count": snapshot["adult_count"],
+        # A snapshot frozen before cabins were sold whole charged exactly the
+        # heads that travelled: no berths were empty, so none were allowed for.
+        "charged_adults": snapshot.get("charged_adults", snapshot["adult_count"]),
         "adults_subtotal": Decimal(snapshot["adults_subtotal"]),
+        "empty_berth_count": snapshot.get("empty_berth_count", 0),
+        "meal_allowance": Decimal(snapshot.get("meal_allowance", "0.00")),
+        "empty_berth_discount": Decimal(snapshot.get("empty_berth_discount", "0.00")),
         "kids": [
             {"age": kid["age"], "charge": Decimal(kid["charge"])}
             for kid in snapshot["kids"]

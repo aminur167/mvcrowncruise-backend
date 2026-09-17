@@ -66,6 +66,48 @@ class Ship(models.Model):
         ),
     )
 
+    #: Taken off the cabin price for each berth nobody is travelling in.
+    #:
+    #: A cabin is sold whole: two people or one, the room is out of inventory
+    #: either way, so the fare is the cabin's full capacity × the per-adult
+    #: price. What a missing guest genuinely saves the operator is their food
+    #: for the trip, and that is what comes back — once per absent adult, for
+    #: the whole package, not per night.
+    #:
+    #: BLANK is not zero here, and the difference is the pricing model itself:
+    #:
+    #:   blank → cabins are sold per head. One adult in a four-berth cabin pays
+    #:           for one adult. This is the original behaviour and the default,
+    #:           so no existing ship starts charging differently the day this
+    #:           field appears.
+    #:   0     → cabins are sold whole, with nothing returned for empty berths.
+    #:   5000  → cabins are sold whole, less 5000 for each berth nobody takes.
+    #:
+    #: A price change is not something to arrive by deployment, which is why
+    #: turning the model on is a deliberate act by staff and not a default.
+    meal_allowance = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        default=None,
+        validators=[MinValueValidator(Decimal("0.00"))],
+        help_text=(
+            "Leave blank to charge per person. Set it to sell whole cabins, "
+            "returning this much for each empty adult berth — the food that "
+            "guest would have eaten over the trip."
+        ),
+    )
+
+    @property
+    def sells_whole_cabins(self) -> bool:
+        """Whether a cabin's fare is its capacity rather than its headcount.
+
+        Reads better at the call site than `meal_allowance is not None`, and
+        keeps the one-field-two-meanings decision in one place.
+        """
+        return self.meal_allowance is not None
+
     # ---- Cancellation / refund policy knobs ------------------------------
     # Business policy, so data rather than constants — and per-ship, since a
     # second ship may run a different operation. The charge SCHEDULE itself is
