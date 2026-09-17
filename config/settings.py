@@ -31,15 +31,25 @@ DEBUG = env("DEBUG")
 
 ALLOWED_HOSTS = env.list("ALLOWED_HOSTS", default=["localhost", "127.0.0.1"])
 
+# Is this a deployed environment? Each host stamps its own marker on every
+# deploy; local dev has none, so DEBUG=True stays fine there.
+#
+# Render was added because the guard below keyed on Railway alone, and the
+# project moved hosts — leaving the fail-safe silently dead on the host that
+# actually serves the site.
+IS_DEPLOYED = bool(
+    env("RAILWAY_ENVIRONMENT", default="")
+    or env("RENDER", default="")
+    or env("RENDER_SERVICE_ID", default="")
+)
+
 # Fail-safe: never boot a deployed environment with DEBUG on. DEBUG=True leaks
 # tracebacks with SECRET_KEY/DB DSN/settings on any 500, and turns off every
-# hardening flag below. Railway sets RAILWAY_ENVIRONMENT on every deploy; if we
-# see that marker with DEBUG still on, refuse to start rather than silently
-# serve insecure. Local dev has no such marker, so DEBUG=True stays fine there.
-if DEBUG and env("RAILWAY_ENVIRONMENT", default=""):
+# hardening flag below — so refuse to start rather than silently serve insecure.
+if DEBUG and IS_DEPLOYED:
     raise ImproperlyConfigured(
-        "DEBUG must be False in a deployed environment (RAILWAY_ENVIRONMENT is "
-        "set). Set DEBUG=False on the Railway service before deploying."
+        "DEBUG must be False in a deployed environment. Set DEBUG=False on the "
+        "service before deploying."
     )
 
 
@@ -375,7 +385,22 @@ SIMPLE_JWT = {
 
 SSLCOMMERZ_STORE_ID = env("SSLCOMMERZ_STORE_ID", default="")
 SSLCOMMERZ_STORE_PASSWORD = env("SSLCOMMERZ_STORE_PASSWORD", default="")
+# Defaults to the sandbox: a missing flag must never mean "take real money".
 SSLCOMMERZ_IS_SANDBOX = env.bool("SSLCOMMERZ_IS_SANDBOX", default=True)
+
+# A deployed site left on the sandbox is the quiet failure: checkout works,
+# the customer is thanked, the invoice is emailed — and no money ever arrives,
+# because none of it happened at a real gateway. Nothing about the site looks
+# wrong, so it is found by someone counting the settlement report. Say so at
+# boot, loudly, in the log the deploy actually prints.
+if IS_DEPLOYED and SSLCOMMERZ_IS_SANDBOX:
+    sys.stderr.write(
+        "\n"
+        "*** SSLCOMMERZ IS IN SANDBOX MODE ON A DEPLOYED SITE ***\n"
+        "Payments will be taken against the sandbox gateway and NO REAL MONEY\n"
+        "will be settled. Set SSLCOMMERZ_IS_SANDBOX=False, with the live Store\n"
+        "ID and Store Password, before taking bookings.\n\n"
+    )
 
 _SSLCOMMERZ_BASE = (
     "https://sandbox.sslcommerz.com"

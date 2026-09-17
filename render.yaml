@@ -33,8 +33,12 @@ services:
         sync: false
       - key: SSLCOMMERZ_STORE_PASSWORD
         sync: false
+      # Dashboard-managed like the credentials it belongs with, NOT pinned
+      # here. A literal "True" in the blueprint is re-applied on every sync,
+      # so a live site would be quietly put back on the sandbox gateway —
+      # checkout still works, and no money arrives.
       - key: SSLCOMMERZ_IS_SANDBOX
-        value: "True"
+        sync: false
       - key: EMAIL_BACKEND
         sync: false
       - key: EMAIL_HOST
