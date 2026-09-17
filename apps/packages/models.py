@@ -1,5 +1,5 @@
 from datetime import datetime, time, timedelta
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 
 from django.conf import settings
 from django.contrib.postgres.constraints import ExclusionConstraint
@@ -25,6 +25,12 @@ class PackageQuerySet(models.QuerySet):
         )
 
 
+class OfferType(models.TextChoices):
+    NONE = "none", "No offer"
+    PERCENT = "percent", "Percentage off"
+    FIXED = "fixed", "Fixed amount off, per cabin"
+
+
 class Package(models.Model):
     class Status(models.TextChoices):
         DRAFT = "draft", "Draft"
@@ -33,9 +39,7 @@ class Package(models.Model):
         COMPLETED = "completed", "Completed"
         CANCELLED = "cancelled", "Cancelled"
 
-    class OfferType(models.TextChoices):
-        PERCENT = "percent", "Percentage off"
-        FLAT = "flat", "Flat amount off (BDT)"
+    OfferType = OfferType
 
     ship = models.ForeignKey(Ship, on_delete=models.PROTECT, related_name="packages")
     start_date = models.DateField()
@@ -142,16 +146,19 @@ class Package(models.Model):
     discount_type = models.CharField(
         max_length=10,
         choices=OfferType.choices,
-        blank=True,
-        help_text="Blank means there is no offer on this sailing.",
+        default=OfferType.NONE,
+        help_text="What kind of reduction, if any, this sailing is sold at.",
     )
     discount_value = models.DecimalField(
         max_digits=10,
         decimal_places=2,
-        null=True,
-        blank=True,
+        default=Decimal("0.00"),
         validators=[MinValueValidator(Decimal("0.00"))],
-        help_text="A percentage (0-100), or a flat BDT amount — per the type above.",
+        help_text=(
+            "Percent off, or taka off PER CABIN — a 3-cabin booking gets a "
+            "fixed discount three times, once against each cabin, because that "
+            "is how the cabins are priced."
+        ),
     )
     offer_ends_at = models.DateTimeField(
         null=True,
@@ -213,17 +220,28 @@ class Package(models.Model):
         # A percentage over 100 would price the cabin below nothing. The floor
         # in discount_on() already refuses to go negative, but silently pricing
         # every cabin at zero is not what the staffer who typed 150 intended.
-        if (
-            self.discount_type == self.OfferType.PERCENT
-            and self.discount_value is not None
-            and self.discount_value > 100
-        ):
+        if self.discount_type != self.OfferType.NONE:
+            if self.discount_value is None or self.discount_value <= 0:
+                raise ValidationError(
+                    {
+                        "discount_value": (
+                            "An offer needs an amount. Set the type back to "
+                            "“No offer” to sell at the normal price."
+                        )
+                    }
+                )
+            if self.discount_value > Decimal("100") and (
+                self.discount_type == self.OfferType.PERCENT
+            ):
+                raise ValidationError(
+                    {"discount_value": "A percentage discount cannot exceed 100%."}
+                )
+        elif self.discount_value and self.discount_value > 0:
+            # Left behind after switching the type back — harmless to price
+            # (offer_is_live() is false either way) but it would reappear the
+            # moment someone set a type again, as a discount nobody chose.
             raise ValidationError(
-                {"discount_value": "A percentage discount cannot exceed 100%."}
-            )
-        if self.discount_type and self.discount_value is None:
-            raise ValidationError(
-                {"discount_value": "Enter the discount amount, or clear the offer type."}
+                {"discount_value": "Clear the amount as well when there is no offer."}
             )
         # One ship cannot run two voyages over the same nights. Same-day
         # turnaround (this end_date == next start_date) is allowed, so the
@@ -417,18 +435,24 @@ class Package(models.Model):
             .count()
         )
 
-    def offer_is_live(self):
-        """Whether an offer applies to this sailing right now.
+    def offer_is_live(self, now=None):
+        """Whether this sailing is currently being sold at a reduced price.
 
         A type with no value, or a value of zero, is not an offer — staff who
         pick a type and then clear the number have no discount, and a 0% badge
         on a card is worse than none.
+
+        A window that has closed is simply not an offer any more — but note
+        that bookings priced while it was open keep what they were given: the
+        discount is frozen into each cabin's price_snapshot, exactly like every
+        other rate. Ending an offer never re-prices someone who already booked.
+
+        `now` is injectable so a test can stand either side of a boundary
+        without having to freeze the clock.
         """
-        if not self.discount_type or self.discount_value is None:
+        if self.discount_type == self.OfferType.NONE or self.discount_value <= 0:
             return False
-        if self.discount_value <= 0:
-            return False
-        if self.offer_ends_at and timezone.now() >= self.offer_ends_at:
+        if self.offer_ends_at and self.offer_ends_at <= (now or timezone.now()):
             return False
         return True
 
@@ -440,14 +464,20 @@ class Package(models.Model):
         else, so an offer cannot be advertised on the card and then missed by
         the charge.
         """
-        zero = Decimal("0.00")
         if not self.offer_is_live() or subtotal <= 0:
-            return zero
+            return Decimal("0.00")
         if self.discount_type == self.OfferType.PERCENT:
             raw = subtotal * self.discount_value / Decimal("100")
         else:
+            # Per CABIN, not per booking: a 3-cabin booking gets a fixed
+            # discount three times, because that is how the cabins are priced.
             raw = self.discount_value
-        return min(subtotal, raw.quantize(Decimal("0.01")))
+        # Round once, here, so the discount is a real money amount rather than
+        # a repeating fraction the total then inherits. HALF_UP explicitly:
+        # Decimal's context default is HALF_EVEN, which rounds a half-paisa to
+        # the nearest even and is not how anyone quotes a price.
+        raw = raw.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        return min(raw, subtotal)
 
 
 class RoomBlocked(ValidationError):

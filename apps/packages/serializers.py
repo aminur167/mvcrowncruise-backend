@@ -1,3 +1,5 @@
+from decimal import ROUND_HALF_UP, Decimal
+
 from rest_framework import serializers
 
 from apps.ships.serializers import (
@@ -6,7 +8,13 @@ from apps.ships.serializers import (
     RoomTypeSerializer,
 )
 
-from .models import ForeignerSurcharge, KidPricingRule, Package, PackageRoom
+from .models import (
+    ForeignerSurcharge,
+    KidPricingRule,
+    OfferType,
+    Package,
+    PackageRoom,
+)
 
 
 class ShipMiniSerializer(serializers.Serializer):
@@ -93,23 +101,50 @@ class PackageListSerializer(serializers.ModelSerializer):
         return package.package_rooms.filter(is_available=True).count()
 
     def get_offer(self, package):
-        """The sailing's live offer, or None.
+        """The live offer, or None.
 
-        Both prices are for ONE adult in the cheapest cabin — enough for the
-        card to strike through a figure honestly. The real money is quoted per
-        booking by price_breakdown(), which applies the same discount.
+        `adult_price_before` / `adult_price_after` are the was-and-now pair the
+        cards strike through. They are computed here, never on the client: the
+        rule on this project is that the browser does no arithmetic on money.
+
+        `after` is null for a fixed-amount offer, and that is deliberate. A
+        flat discount comes off the CABIN, so there is no honest way to state
+        it against a per-adult headline — a family of four would see a quarter
+        of the saving they actually get, and a solo traveller four times it.
+        The badge states such an offer in its own terms ("৳1,500 off per
+        cabin") and the card shows no struck-through price.
         """
         if not package.offer_is_live():
             return None
-        was = package.adult_price
-        discount = package.discount_on(was)
+
+        after = None
+        if package.discount_type == OfferType.PERCENT:
+            # A percentage scales cleanly: every component of the cabin, the
+            # adult fare included, is reduced by exactly this share.
+            kept = Decimal("100") - package.discount_value
+            after = (package.adult_price * kept / Decimal("100")).quantize(
+                Decimal("0.01"), rounding=ROUND_HALF_UP
+            )
+        after_str = str(after) if after is not None else None
+
         return {
             "label": package.offer_label,
+            "type": package.discount_type,
+            "value": str(package.discount_value),
+            "ends_at": package.offer_ends_at,
+            "adult_price_before": str(package.adult_price),
+            "adult_price_after": after_str,
+            # ---- deprecated aliases -------------------------------------
+            # The names above are the ones this project and its sister both
+            # use. These four are what an already-deployed browser tab is
+            # reading, and the API and the frontend deploy separately, so for
+            # one release both spellings ship and the deploy order stops
+            # mattering. Delete them once the site has been on the new names
+            # for a day — nothing in this repository reads them.
             "discount_type": package.discount_type,
             "discount_value": str(package.discount_value),
-            "ends_at": package.offer_ends_at,
-            "was_price": str(was),
-            "now_price": str(was - discount),
+            "was_price": str(package.adult_price),
+            "now_price": after_str,
         }
 
     def get_nights(self, package):

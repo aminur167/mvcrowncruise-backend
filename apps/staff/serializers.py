@@ -465,6 +465,17 @@ class StaffPackageSerializer(serializers.ModelSerializer):
     # a multipart PATCH; clearing is `null`.
     hero_image = serializers.ImageField(required=False, allow_null=True, use_url=True)
 
+    # Declared rather than inferred so the legacy spellings below survive field
+    # validation long enough for validate_* to normalise them. Still a closed
+    # set of choices — "banana" is rejected exactly as it was before.
+    discount_type = serializers.ChoiceField(
+        choices=list(Package.OfferType.choices) + [("", "(legacy blank)"), ("flat", "(legacy fixed)")],
+        required=False,
+    )
+    discount_value = serializers.DecimalField(
+        max_digits=10, decimal_places=2, required=False, allow_null=True, min_value=0
+    )
+
     class Meta:
         model = Package
         fields = [
@@ -476,6 +487,25 @@ class StaffPackageSerializer(serializers.ModelSerializer):
             "offer_label", "discount_type", "discount_value", "offer_ends_at",
             "bookings_count", "paid_total", "due_total", "rooms_total", "is_bookable",
         ]
+
+    def validate_discount_type(self, value):
+        """Accept what an older dashboard build sends.
+
+        This field used to store "" for "no offer" and "flat" for a fixed
+        amount. The browser and the API deploy separately, so for the length of
+        one release the old spellings still arrive from a tab nobody has
+        reloaded — and a staff member saving a package should not meet a
+        validation error because of our deploy order. Normalised here rather
+        than accepted into the database, so only one spelling is ever stored.
+        """
+        return {"": Package.OfferType.NONE, "flat": Package.OfferType.FIXED}.get(
+            value, value
+        )
+
+    def validate_discount_value(self, value):
+        # Same reason: the old field was nullable and an older build sends null
+        # to mean "no amount". The column is NOT NULL now.
+        return Decimal("0.00") if value is None else value
 
     def get_is_bookable(self, package):
         return package.is_bookable()
