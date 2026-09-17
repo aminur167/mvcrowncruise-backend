@@ -33,6 +33,10 @@ class Package(models.Model):
         COMPLETED = "completed", "Completed"
         CANCELLED = "cancelled", "Cancelled"
 
+    class OfferType(models.TextChoices):
+        PERCENT = "percent", "Percentage off"
+        FLAT = "flat", "Flat amount off (BDT)"
+
     ship = models.ForeignKey(Ship, on_delete=models.PROTECT, related_name="packages")
     start_date = models.DateField()
     end_date = models.DateField()
@@ -125,6 +129,36 @@ class Package(models.Model):
         validators=[MinValueValidator(Decimal("0.0")), MaxValueValidator(Decimal("5.0"))],
         help_text="Displayed star rating out of 5, e.g. 4.8. Leave blank to hide.",
     )
+
+    # ── Offer / discount on this sailing ──
+    # The card shows the old price struck through beside the new one. The money
+    # itself is discounted inside price_breakdown(), never at a call site, so
+    # the quote, Booking.reprice() and the invoice cannot disagree about it.
+    offer_label = models.CharField(
+        max_length=60,
+        blank=True,
+        help_text='Shown on the card, e.g. "Eid Special". Blank hides the badge.',
+    )
+    discount_type = models.CharField(
+        max_length=10,
+        choices=OfferType.choices,
+        blank=True,
+        help_text="Blank means there is no offer on this sailing.",
+    )
+    discount_value = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(Decimal("0.00"))],
+        help_text="A percentage (0-100), or a flat BDT amount — per the type above.",
+    )
+    offer_ends_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="After this moment the offer stops applying. Blank = no end date.",
+    )
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -176,6 +210,21 @@ class Package(models.Model):
     def clean(self):
         if self.start_date and self.end_date and self.end_date <= self.start_date:
             raise ValidationError({"end_date": "End date must be after start date."})
+        # A percentage over 100 would price the cabin below nothing. The floor
+        # in discount_on() already refuses to go negative, but silently pricing
+        # every cabin at zero is not what the staffer who typed 150 intended.
+        if (
+            self.discount_type == self.OfferType.PERCENT
+            and self.discount_value is not None
+            and self.discount_value > 100
+        ):
+            raise ValidationError(
+                {"discount_value": "A percentage discount cannot exceed 100%."}
+            )
+        if self.discount_type and self.discount_value is None:
+            raise ValidationError(
+                {"discount_value": "Enter the discount amount, or clear the offer type."}
+            )
         # One ship cannot run two voyages over the same nights. Same-day
         # turnaround (this end_date == next start_date) is allowed, so the
         # comparison is half-open: [start_date, end_date).
@@ -367,6 +416,38 @@ class Package(models.Model):
             .filter(is_booked=False)
             .count()
         )
+
+    def offer_is_live(self):
+        """Whether an offer applies to this sailing right now.
+
+        A type with no value, or a value of zero, is not an offer — staff who
+        pick a type and then clear the number have no discount, and a 0% badge
+        on a card is worse than none.
+        """
+        if not self.discount_type or self.discount_value is None:
+            return False
+        if self.discount_value <= 0:
+            return False
+        if self.offer_ends_at and timezone.now() >= self.offer_ends_at:
+            return False
+        return True
+
+    def discount_on(self, subtotal):
+        """What this sailing's offer takes off `subtotal` (Decimal, >= 0).
+
+        Never more than the subtotal: a flat offer larger than a small cabin
+        must make it free, not owed. Called from price_breakdown() and nowhere
+        else, so an offer cannot be advertised on the card and then missed by
+        the charge.
+        """
+        zero = Decimal("0.00")
+        if not self.offer_is_live() or subtotal <= 0:
+            return zero
+        if self.discount_type == self.OfferType.PERCENT:
+            raw = subtotal * self.discount_value / Decimal("100")
+        else:
+            raw = self.discount_value
+        return min(subtotal, raw.quantize(Decimal("0.01")))
 
 
 class RoomBlocked(ValidationError):

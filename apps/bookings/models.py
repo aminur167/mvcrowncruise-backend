@@ -686,6 +686,30 @@ class Payment(models.Model):
         return f"{self.booking.booking_code}: {self.amount} ({self.status})"
 
     @property
+    def bank_tran_id(self):
+        """The gateway's own id for this transaction, or "".
+
+        SSLCommerz refunds a TRANSACTION; our ledger records a booking-level
+        liability, and nothing connected the two — staff went refund register →
+        booking code → Bookings → open booking → copy the id → merchant panel.
+        Six steps whose failure mode is refunding a different customer.
+
+        Read out of the stored payload rather than given a column of its own:
+        it arrives only on settlement, nothing queries on it, and the raw
+        gateway response is already retained verbatim.
+        """
+        return (self.gateway_payload or {}).get("bank_tran_id") or ""
+
+    @property
+    def card_type(self):
+        """How it was paid ("BKASH-BKash", "VISA-Dutch Bangla"), or "".
+
+        Shown beside the transaction id so staff refunding by hand can tell two
+        payments on one booking apart at a glance.
+        """
+        return (self.gateway_payload or {}).get("card_type") or ""
+
+    @property
     def is_risky(self):
         """Whether SSLCommerz flagged this transaction for verification.
 

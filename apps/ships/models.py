@@ -1,3 +1,6 @@
+from decimal import Decimal
+
+from django.core.validators import MinValueValidator
 from django.db import models, transaction
 from django.utils.text import slugify
 
@@ -43,6 +46,24 @@ class Ship(models.Model):
         choices=GuideReportDensity.choices,
         default=GuideReportDensity.NORMAL,
         help_text="Guide report PDF text size / rows-per-page.",
+    )
+
+    # ---- Fare policy -----------------------------------------------------
+    # Pre-fills a new sailing's adult price so staff are not retyping the same
+    # figure for every departure. Each sailing can still differ — this is the
+    # starting point, not a rule. Nullable: a ship whose fare genuinely varies
+    # per sailing should show an empty box, not a wrong number staff have to
+    # notice and clear.
+    default_adult_price = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(Decimal("0.00"))],
+        help_text=(
+            "Pre-fills the adult price on a new package for this ship. Leave "
+            "blank if every sailing is priced on its own."
+        ),
     )
 
     # ---- Cancellation / refund policy knobs ------------------------------

@@ -33,6 +33,11 @@ PACKAGE_LIST_FIELDS = {
     # is what drives its "only N rooms left" urgency line.
     "rating",
     "available_rooms",
+    "cabins_total",
+    # The deposit floor the booking form builds its quick-pay buttons from,
+    # and the sailing's offer (null when there is none).
+    "min_deposit_percent",
+    "offer",
 }
 ROOM_FIELDS = {
     "id",

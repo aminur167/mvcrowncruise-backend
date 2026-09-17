@@ -161,7 +161,31 @@ class StaffPackageViewSet(viewsets.ModelViewSet):
     pagination_class = StaffPagination
 
     def get_queryset(self):
-        return package_stats_queryset()
+        """Active / Past / Cancelled, filtered by ?group= SERVER-side.
+
+        It has to be server-side because this list is paginated: filtering a
+        25-row page in the browser shows an empty Cancelled tab whenever the
+        cancelled sailings happen to sit on page two.
+
+        "Active" is anything not cancelled that has not finished yet — a draft
+        counts, because staff are still working on it. An unknown group falls
+        through to the whole list rather than erroring: a stale tab name in a
+        bookmarked URL should show everything, not a 400.
+        """
+        queryset = package_stats_queryset()
+        group = self.request.query_params.get("group")
+        today = timezone.localdate()
+        if group == "active":
+            return queryset.exclude(status=Package.Status.CANCELLED).filter(
+                end_date__gte=today
+            )
+        if group == "past":
+            return queryset.exclude(status=Package.Status.CANCELLED).filter(
+                end_date__lt=today
+            )
+        if group == "cancelled":
+            return queryset.filter(status=Package.Status.CANCELLED)
+        return queryset
 
     @action(detail=True, methods=["post"], url_path="close-booking")
     def close_booking(self, request, pk=None):
@@ -778,6 +802,14 @@ class StaffOverviewView(APIView):
                 "pending_cancellation_count": pending_cancellations["count"] or 0,
                 "pending_cancellation_refund_total": pending_cancellations["total"]
                 or Decimal("0.00"),
+                # Payments the gateway called risky, or whose IPN could not be
+                # processed. The overview carries the count as well as the
+                # notifications feed, because the queue's own tab is hidden
+                # while it is empty — and a tab nobody can see is no way to
+                # learn that money is being held.
+                "payments_needing_review": Payment.objects.filter(
+                    needs_manual_review=True
+                ).count(),
                 "bookings_today": Booking.objects.filter(
                     created_at__date=today
                 ).count(),
@@ -789,5 +821,99 @@ class StaffOverviewView(APIView):
                 "recent_payments": recent_payments,
                 "by_ship": by_ship,
                 "packages": per_package,
+            }
+        )
+
+
+class StaffNotificationsView(APIView):
+    """What is waiting for a human right now — the bell, and the sidebar badge.
+
+    Deliberately NOT folded into the overview endpoint. Overview aggregates
+    every booking on the system to draw its charts; this is polled every minute
+    by every open tab, so it only ever touches rows that are actually
+    outstanding.
+
+    Each section returns a count plus the first few rows, with ids, so a
+    popover row can link straight at the thing rather than dropping the user on
+    a list to find it again.
+    """
+
+    permission_classes = [IsAdminUser]
+
+    #: Rows returned per section. Enough to act on, few enough that a busy
+    #: week does not turn a one-minute poll into a page-sized payload.
+    PREVIEW = 5
+
+    def get(self, request):
+        # Imported here, as the overview view does: apps.refunds imports from
+        # apps.bookings, which this module is already part of the graph of.
+        from apps.refunds.models import CancellationRequest, Refund
+
+        pending = (
+            CancellationRequest.objects.filter(
+                status=CancellationRequest.Status.PENDING
+            )
+            .select_related("booking")
+            .order_by("created_at")
+        )
+        overdue = (
+            Refund.objects.filter(status=Refund.Status.PENDING)
+            .select_related("booking", "booking__package__ship")
+            .order_by("created_at")
+        )
+        review = (
+            Payment.objects.filter(needs_manual_review=True)
+            .select_related("booking")
+            .order_by("-created_at")
+        )
+
+        now = timezone.now()
+        overdue_rows = [
+            {
+                "id": refund.id,
+                "booking_code": refund.booking.booking_code,
+                "amount": refund.amount,
+                "days_waiting": (now - refund.created_at).days,
+                "sla_days": refund.booking.package.ship.refund_sla_days,
+            }
+            for refund in overdue
+            # Past the window we published to the customer, not merely pending:
+            # a refund raised this morning is not a thing to nag anyone about.
+            if (now - refund.created_at).days
+            > refund.booking.package.ship.refund_sla_days
+        ]
+
+        return Response(
+            {
+                "pending_cancellations": {
+                    "count": pending.count(),
+                    "items": [
+                        {
+                            "id": req.id,
+                            "booking_code": req.booking.booking_code,
+                            "customer_name": req.booking.customer_name,
+                            "refund_amount": req.refund_amount,
+                            "created_at": req.created_at,
+                        }
+                        for req in pending[: self.PREVIEW]
+                    ],
+                },
+                "overdue_payouts": {
+                    "count": len(overdue_rows),
+                    "items": overdue_rows[: self.PREVIEW],
+                },
+                "payments_needing_review": {
+                    "count": review.count(),
+                    "items": [
+                        {
+                            "id": pay.id,
+                            "booking_code": pay.booking.booking_code,
+                            "amount": pay.amount,
+                            "reason": pay.last_reconcile_error,
+                            "created_at": pay.created_at,
+                        }
+                        for pay in review[: self.PREVIEW]
+                    ],
+                },
             }
         )

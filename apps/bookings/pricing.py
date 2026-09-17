@@ -51,6 +51,14 @@ def price_breakdown(
     foreigner_subtotal = (
         adult_surcharge * foreign_adults + kid_surcharge * foreign_kids
     )
+    # The sailing's offer is applied HERE, inside the one function every money
+    # path goes through — the quote, Booking.reprice() and the invoice. Applied
+    # at the call sites instead, there would be a path by which a customer is
+    # shown an offer on the card and charged without it.
+    subtotal = (
+        room_type.base_price + adults_subtotal + kids_subtotal + foreigner_subtotal
+    )
+    discount = package.discount_on(subtotal)
     return {
         "room_base": room_type.base_price,
         "adult_price": package.adult_price,
@@ -66,9 +74,14 @@ def price_breakdown(
         "foreigner_adult_surcharge": adult_surcharge,
         "foreigner_kid_surcharge": kid_surcharge,
         "foreigner_subtotal": foreigner_subtotal,
-        "total": (
-            room_type.base_price + adults_subtotal + kids_subtotal + foreigner_subtotal
-        ),
+        # What the cabin came to before the offer, the offer's own name, and
+        # what it took off — all three frozen onto the booking so the invoice
+        # can show the customer the bargain they were given, months later,
+        # after the offer itself has been edited or deleted.
+        "subtotal": subtotal,
+        "offer_label": package.offer_label if discount else "",
+        "discount": discount,
+        "total": subtotal - discount,
     }
 
 
@@ -89,6 +102,9 @@ def booking_price_breakdown(package, rooms):
     """
     room_breakdowns = []
     grand_total = ZERO
+    grand_subtotal = ZERO
+    total_discount = ZERO
+    offer_label = ""
     for entry in rooms:
         room = entry["room"]
         bd = price_breakdown(
@@ -102,7 +118,19 @@ def booking_price_breakdown(package, rooms):
         bd["room_number"] = room.room_number
         room_breakdowns.append(bd)
         grand_total += bd["total"]
-    return {"rooms": room_breakdowns, "grand_total": grand_total}
+        grand_subtotal += bd["subtotal"]
+        total_discount += bd["discount"]
+        offer_label = offer_label or bd["offer_label"]
+    # The booking-level offer figures are the sum of the rooms', not a second
+    # calculation — a summary line that recomputed the discount could disagree
+    # with the rooms it is summarising.
+    return {
+        "rooms": room_breakdowns,
+        "subtotal": grand_subtotal,
+        "offer_label": offer_label,
+        "discount": total_discount,
+        "grand_total": grand_total,
+    }
 
 
 def snapshot_booking_breakdown(breakdown):
@@ -113,6 +141,11 @@ def snapshot_booking_breakdown(breakdown):
             snapshot_breakdown(bd, room_number=bd.get("room_number"))
             for bd in breakdown["rooms"]
         ],
+        # Defaults for the same reason restore_breakdown carries them: a
+        # booking-level breakdown built before offers existed has no such keys.
+        "subtotal": str(breakdown.get("subtotal", breakdown["grand_total"])),
+        "offer_label": breakdown.get("offer_label", ""),
+        "discount": str(breakdown.get("discount", ZERO)),
         "grand_total": str(breakdown["grand_total"]),
     }
 
@@ -144,6 +177,11 @@ def snapshot_breakdown(breakdown, room_number=None):
         ),
         "foreigner_kid_surcharge": str(breakdown.get("foreigner_kid_surcharge", ZERO)),
         "foreigner_subtotal": str(breakdown.get("foreigner_subtotal", ZERO)),
+        # Frozen so the invoice can still show what the offer took off long
+        # after the offer itself has been edited or deleted off the package.
+        "subtotal": str(breakdown.get("subtotal", breakdown["total"])),
+        "offer_label": breakdown.get("offer_label", ""),
+        "discount": str(breakdown.get("discount", ZERO)),
         "total": str(breakdown["total"]),
     }
     if room_number is not None:
@@ -155,12 +193,15 @@ def restore_breakdown(snapshot):
     """A room's price_snapshot → breakdown with Decimals back (inverse of
     snapshot_breakdown). Returns None for an empty/absent snapshot.
 
-    Every foreigner key is read with a DEFAULT, never subscripted: snapshots
-    frozen before the foreign-national surcharge existed simply do not carry
-    them, and those bookings are paid, invoiced and still re-rendered on demand
+    Every foreigner and offer key is read with a DEFAULT, never subscripted:
+    snapshots frozen before those features existed simply do not carry them,
+    and those bookings are paid, invoiced and still re-rendered on demand
     (resend, regeneration after a redeploy). A KeyError here would 500 the
     invoice of every pre-feature booking — the snapshot is a historical record,
     so readers must tolerate older shapes forever.
+
+    `subtotal` falls back to the total, which is what it was before any offer
+    existed: a booking with no discount is one where the two are equal.
     """
     if not snapshot:
         return None
@@ -183,6 +224,9 @@ def restore_breakdown(snapshot):
             snapshot.get("foreigner_kid_surcharge", "0.00")
         ),
         "foreigner_subtotal": Decimal(snapshot.get("foreigner_subtotal", "0.00")),
+        "subtotal": Decimal(snapshot.get("subtotal", snapshot["total"])),
+        "offer_label": snapshot.get("offer_label", ""),
+        "discount": Decimal(snapshot.get("discount", "0.00")),
         "total": Decimal(snapshot["total"]),
         "room_number": snapshot.get("room_number"),
     }

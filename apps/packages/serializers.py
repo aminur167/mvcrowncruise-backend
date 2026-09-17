@@ -45,6 +45,14 @@ class PackageListSerializer(serializers.ModelSerializer):
     # package — fine for the public list's small, bounded set of open
     # sailings (see get_queryset above).
     available_rooms = serializers.SerializerMethodField()
+    # Total cabins on the sailing, so the card can say "3 of 31 left" rather
+    # than a bare count with nothing to measure it against. Published because
+    # SSLCommerz's review expects stock to be visible before purchase.
+    cabins_total = serializers.SerializerMethodField()
+    # The whole offer as one object, carrying both prices already computed.
+    # The browser never recalculates money — a card that did its own arithmetic
+    # could advertise a figure the checkout then refuses.
+    offer = serializers.SerializerMethodField()
 
     class Meta:
         model = Package
@@ -70,10 +78,39 @@ class PackageListSerializer(serializers.ModelSerializer):
             "highlights",
             "rating",
             "available_rooms",
+            "cabins_total",
+            # Published so the booking form can offer deposit amounts the
+            # server will actually accept: a 25% quick-pay button under a 50%
+            # policy is a button that always fails.
+            "min_deposit_percent",
+            "offer",
         ]
 
     def get_available_rooms(self, package):
         return package.available_rooms_count()
+
+    def get_cabins_total(self, package):
+        return package.package_rooms.filter(is_available=True).count()
+
+    def get_offer(self, package):
+        """The sailing's live offer, or None.
+
+        Both prices are for ONE adult in the cheapest cabin — enough for the
+        card to strike through a figure honestly. The real money is quoted per
+        booking by price_breakdown(), which applies the same discount.
+        """
+        if not package.offer_is_live():
+            return None
+        was = package.adult_price
+        discount = package.discount_on(was)
+        return {
+            "label": package.offer_label,
+            "discount_type": package.discount_type,
+            "discount_value": str(package.discount_value),
+            "ends_at": package.offer_ends_at,
+            "was_price": str(was),
+            "now_price": str(was - discount),
+        }
 
     def get_nights(self, package):
         return package.effective_nights()

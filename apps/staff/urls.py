@@ -21,6 +21,7 @@ from .views import (
     StaffKidPricingRuleViewSet,
     StaffLoginView,
     StaffLogoutView,
+    StaffNotificationsView,
     StaffOverviewView,
     StaffPackageViewSet,
     StaffPaymentViewSet,
@@ -65,6 +66,11 @@ urlpatterns = [
     path("login/refresh/", StaffTokenRefreshView.as_view(), name="staff-token-refresh"),
     path("logout/", StaffLogoutView.as_view(), name="staff-logout"),
     path("overview/", StaffOverviewView.as_view(), name="staff-overview"),
+    path(
+        "notifications/",
+        StaffNotificationsView.as_view(),
+        name="staff-notifications",
+    ),
     # Singleton: one row, no create/delete — a plain detail route, not a
     # router registration that would advertise a list and a POST.
     path(

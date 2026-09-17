@@ -14,6 +14,7 @@ checked against what the booking actually received.
 
 from rest_framework import serializers
 
+from apps.bookings.models import Payment
 from apps.refunds.models import (
     CancellationRequest,
     CancellationRule,
@@ -176,11 +177,13 @@ class StaffRefundSerializer(serializers.ModelSerializer):
     processed_by_name = serializers.SerializerMethodField()
     age_days = serializers.SerializerMethodField()
     overdue = serializers.SerializerMethodField()
+    gateway_transactions = serializers.SerializerMethodField()
 
     class Meta:
         model = Refund
         fields = [
             "id",
+            "gateway_transactions",
             "booking_code",
             "customer_name",
             "phone",
@@ -226,6 +229,31 @@ class StaffRefundSerializer(serializers.ModelSerializer):
         if refund.status != Refund.Status.PENDING:
             return False
         return self.get_age_days(refund) > refund.booking.package.ship.refund_sla_days
+
+    def get_gateway_transactions(self, refund):
+        """The settled payments this refund is raised against.
+
+        SSLCommerz refunds a transaction, not a booking, so the person working
+        the merchant panel needs the gateway's own id — and ALL of them when a
+        booking was paid in instalments, because refunding only the first
+        silently short-pays the customer.
+
+        Payments with no bank_tran_id are still listed: an empty id is itself
+        the finding, and dropping the row would leave staff refunding a booking
+        whose remaining money they cannot see.
+        """
+        return [
+            {
+                "payment_id": payment.id,
+                "transaction_id": payment.transaction_id,
+                "bank_tran_id": payment.bank_tran_id,
+                "card_type": payment.card_type,
+                "amount": payment.amount,
+                "paid_at": payment.paid_at,
+            }
+            for payment in refund.booking.payments.all()
+            if payment.status == Payment.Status.SUCCESS
+        ]
 
 
 class StaffRefundCreateSerializer(serializers.Serializer):
