@@ -9,6 +9,12 @@
 # discount_value is NOT NULL and the new discount_type has no blank state to
 # fall back on. Reversible in both directions: nothing here is lossy.
 #
+# It is a migration of its OWN, and that is not tidiness. Postgres refuses to
+# ALTER a table in the same transaction as the UPDATEs that just touched it
+# — "cannot ALTER TABLE because it has pending trigger events" — so the
+# column changes are in 0014, which gets its own transaction. SQLite does not
+# care, which is why a green test run did not catch this and a deploy did.
+#
 # On this database the rewrite touches only rows that were never given an
 # offer — the one live offer is a percentage, which is spelled the same way
 # before and after.
@@ -41,33 +47,4 @@ class Migration(migrations.Migration):
 
     operations = [
         migrations.RunPython(to_named_none, back_to_blank),
-        migrations.AlterField(
-            model_name="package",
-            name="discount_type",
-            field=models.CharField(
-                choices=[
-                    ("none", "No offer"),
-                    ("percent", "Percentage off"),
-                    ("fixed", "Fixed amount off, per cabin"),
-                ],
-                default="none",
-                help_text="What kind of reduction, if any, this sailing is sold at.",
-                max_length=10,
-            ),
-        ),
-        migrations.AlterField(
-            model_name="package",
-            name="discount_value",
-            field=models.DecimalField(
-                decimal_places=2,
-                default=Decimal("0.00"),
-                help_text=(
-                    "Percent off, or taka off PER CABIN — a 3-cabin booking gets a "
-                    "fixed discount three times, once against each cabin, because "
-                    "that is how the cabins are priced."
-                ),
-                max_digits=10,
-                validators=[django.core.validators.MinValueValidator(Decimal("0.00"))],
-            ),
-        ),
     ]

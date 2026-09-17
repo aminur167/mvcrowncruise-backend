@@ -50,7 +50,7 @@ class OfferMigrationTests(TransactionTestCase):
         pct = make(discount_type="percent", discount_value=Decimal("25.00"))
 
         # Forwards.
-        self.migrate_to([("packages", "0013_offer_type_none_and_fixed")])
+        self.migrate_to([("packages", "0014_offer_columns_tighten")])
         Package = global_apps.get_model("packages", "Package")
 
         self.assertEqual(Package.objects.get(pk=blank.pk).discount_type, "none")
