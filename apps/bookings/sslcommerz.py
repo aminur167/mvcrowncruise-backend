@@ -163,6 +163,43 @@ def query_transaction(tran_id):
     return [_strip_card_fields(attempt) for attempt in attempts]
 
 
+def query_refund_status(refund_ref_id):
+    """Ask the gateway what became of a refund, by its refund_ref_id.
+
+    SSLCommerz's refund is not an event, it is a process: the merchant panel
+    shows "Initiate" / "In processing" for days while the issuing bank works,
+    and only then does the money reach the customer. Nothing pushes that change
+    to us — there is no IPN for refunds — so it has to be asked for.
+
+    Returns the response dict. `status` is one of:
+
+        processing  — accepted, money not back yet
+        refunded    — the customer has it
+        cancelled   — it is NOT happening, and somebody has to know
+
+    Raises GatewayError when the API itself could not be reached or refused
+    the request, which is different from a refund that is merely still in
+    flight — the caller must not treat one as the other.
+    """
+    response = requests.get(
+        settings.SSLCOMMERZ_REFUND_URL,
+        params={
+            "refund_ref_id": refund_ref_id,
+            "store_id": settings.SSLCOMMERZ_STORE_ID,
+            "store_passwd": settings.SSLCOMMERZ_STORE_PASSWORD,
+            "format": "json",
+        },
+        timeout=30,
+    )
+    response.raise_for_status()
+    data = response.json()
+    if data.get("APIConnect") != "DONE":
+        raise GatewayError(
+            data.get("errorReason") or data.get("APIConnect") or "Refund query failed."
+        )
+    return _strip_card_fields(data)
+
+
 def verify_ipn_signature(data):
     """Check the verify_sign/verify_key hash SSLCommerz sends with every IPN.
 

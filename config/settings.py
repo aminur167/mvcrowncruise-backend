@@ -414,6 +414,11 @@ SSLCOMMERZ_VALIDATION_URL = f"{_SSLCOMMERZ_BASE}/validator/api/validationserverA
 SSLCOMMERZ_TXN_QUERY_URL = (
     f"{_SSLCOMMERZ_BASE}/validator/api/merchantTransIDvalidationAPI.php"
 )
+# Refund API. SSLCommerz put initiating a refund, and asking what became of
+# one, on the SAME endpoint as the transaction query — which of the three you
+# get depends entirely on the parameters sent. Aliased rather than reused under
+# the other name so the call sites say what they are doing.
+SSLCOMMERZ_REFUND_URL = SSLCOMMERZ_TXN_QUERY_URL
 
 # The band SSLCommerz accepts for a SINGLE transaction. Anything outside it is
 # refused by the gateway after the redirect — by which point the customer has

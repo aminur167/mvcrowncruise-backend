@@ -288,6 +288,23 @@ class CancellationRequest(models.Model):
         return self.status == self.Status.PENDING
 
 
+class GatewayRefundStatus(models.TextChoices):
+    """What SSLCommerz says has become of a refund we asked it for.
+
+    A gateway refund is a process, not an event. The merchant panel shows
+    "Initiate" the moment it is accepted and "In processing" for days after
+    that, while the issuing bank works; the money reaches the customer only at
+    the end. There is no IPN for any of it — nothing tells us when it lands,
+    so it has to be asked for.
+
+    Blank means nobody has asked yet, which is NOT the same as processing.
+    """
+
+    PROCESSING = "processing", "In processing at the gateway"
+    REFUNDED = "refunded", "Refunded — the customer has the money"
+    CANCELLED = "cancelled", "Cancelled by the gateway — money NOT returned"
+
+
 class Refund(models.Model):
     """Money owed back to a customer, and the record of paying it.
 
@@ -368,6 +385,37 @@ class Refund(models.Model):
         related_name="refunds_processed",
     )
     paid_at = models.DateTimeField(null=True, blank=True)
+
+    # ---- Gateway refunds: what the gateway says, not what we recorded -----
+    # Only meaningful when method is GATEWAY. `reference_no` holds SSLCommerz's
+    # refund_ref_id for those (e.g. "R260918030540-73051"), which is the handle
+    # everything below is looked up by.
+    #
+    # These exist because "staff recorded the payout" and "the customer has the
+    # money" are different facts, and for a gateway refund they are days apart.
+    # Recording the payout is the only one we could see before; a refund the
+    # gateway later CANCELS looked, in our own register, exactly like one that
+    # succeeded.
+    gateway_refund_status = models.CharField(
+        max_length=12,
+        choices=GatewayRefundStatus.choices,
+        blank=True,
+        help_text="Blank until the gateway has been asked. Not the same as processing.",
+    )
+    gateway_refunded_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When the gateway says the money actually reached the customer.",
+    )
+    gateway_checked_at = models.DateTimeField(
+        null=True, blank=True, help_text="Last time the gateway was asked about this."
+    )
+    gateway_payload = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="The gateway's last answer, verbatim, for when a figure is disputed.",
+    )
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -393,6 +441,44 @@ class Refund(models.Model):
 
     def __str__(self):
         return f"{self.booking.booking_code} — {self.amount} BDT ({self.get_status_display()})"
+
+    @property
+    def is_gateway_refund(self):
+        """Settled back through SSLCommerz rather than by hand."""
+        return self.method == PayoutMethod.GATEWAY
+
+    @property
+    def gateway_ref_id(self):
+        """SSLCommerz's refund_ref_id, or "".
+
+        Read out of `reference_no` rather than given a column of its own: that
+        field already exists to hold "the reference that reconciles this
+        payout", and two columns meaning the same thing is two columns that
+        eventually disagree.
+        """
+        return self.reference_no if self.is_gateway_refund else ""
+
+    @property
+    def awaiting_gateway(self):
+        """Money we have promised back and the gateway has not yet returned.
+
+        The refund register can say PAID while this is still true — staff did
+        their part the moment they asked the gateway. It is the customer's
+        bank that has not finished, and that gap is exactly what nobody could
+        see before.
+        """
+        if not self.gateway_ref_id:
+            return False
+        return self.gateway_refund_status != GatewayRefundStatus.REFUNDED
+
+    @property
+    def gateway_cancelled(self):
+        """The gateway refused the refund after we recorded it as paid.
+
+        The loudest state in this file: our books say the customer was paid and
+        they were not.
+        """
+        return self.gateway_refund_status == GatewayRefundStatus.CANCELLED
 
     @property
     def masked_account_number(self):

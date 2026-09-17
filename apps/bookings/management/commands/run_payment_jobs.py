@@ -13,6 +13,9 @@ preference:
   enforce_due_deadlines        reminds, then cancels, overdue balances
   close_sailed_bookings        closes out bookings whose tour has finished
   send_unsent_invoices         retries invoice emails that failed to send
+  poll_gateway_refunds         asks the gateway what became of refunds it was
+                               given — there is no IPN for a refund, so a
+                               cancelled one is silent until someone asks
 
 Scheduling these as five independent crons makes their ordering depend on cron
 timing and on nothing going slow — and getting it wrong means releasing a room
@@ -44,6 +47,11 @@ DAILY_JOBS = [
     ("enforce_due_deadlines", []),
     ("close_sailed_bookings", []),
     ("send_unsent_invoices", []),
+    # Order-independent: it touches only refunds, and only their gateway
+    # status. It rides along here because a job nobody schedules is a job
+    # nobody runs, and the thing it catches — a refund the gateway cancelled
+    # after we recorded it paid — is otherwise found by the customer.
+    ("poll_gateway_refunds", []),
 ]
 
 

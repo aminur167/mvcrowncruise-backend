@@ -163,6 +163,9 @@ class StaffCancelBookingSerializer(serializers.Serializer):
 
 class StaffRefundSerializer(serializers.ModelSerializer):
     booking_code = serializers.CharField(source="booking.booking_code", read_only=True)
+    #: Promised back and not yet returned by the gateway. False for every
+    #: hand-settled payout, which is complete the moment staff record it.
+    awaiting_gateway = serializers.BooleanField(read_only=True)
     customer_name = serializers.CharField(
         source="booking.customer_name", read_only=True
     )
@@ -201,6 +204,13 @@ class StaffRefundSerializer(serializers.ModelSerializer):
             "bank_name",
             "branch_name",
             "reference_no",
+            # What the GATEWAY says, as opposed to what staff recorded. For a
+            # gateway refund the two are days apart, and the register said only
+            # the first — so a refund the gateway cancelled read as a success.
+            "gateway_refund_status",
+            "gateway_refunded_at",
+            "gateway_checked_at",
+            "awaiting_gateway",
             "note",
             "created_by_name",
             "processed_by_name",

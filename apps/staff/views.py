@@ -696,7 +696,11 @@ class StaffOverviewView(APIView):
         # money on it and is cancelled". Both are reported — the flag still
         # catches bookings cancelled straight from the Django admin, where
         # nobody has decided a figure.
-        from apps.refunds.models import CancellationRequest, Refund
+        from apps.refunds.models import (
+            CancellationRequest,
+            GatewayRefundStatus,
+            Refund,
+        )
 
         refund_liability = Refund.objects.filter(
             status=Refund.Status.PENDING
@@ -847,7 +851,11 @@ class StaffNotificationsView(APIView):
     def get(self, request):
         # Imported here, as the overview view does: apps.refunds imports from
         # apps.bookings, which this module is already part of the graph of.
-        from apps.refunds.models import CancellationRequest, Refund
+        from apps.refunds.models import (
+            CancellationRequest,
+            GatewayRefundStatus,
+            Refund,
+        )
 
         pending = (
             CancellationRequest.objects.filter(
@@ -883,6 +891,29 @@ class StaffNotificationsView(APIView):
             > refund.booking.package.ship.refund_sla_days
         ]
 
+        # Refunds the GATEWAY cancelled after staff recorded them as paid.
+        # Nothing else on this dashboard can show it: the register records what
+        # staff did, and what staff did was correct — they asked SSLCommerz for
+        # the refund. It is the gateway that then refused, days later, with no
+        # notification of any kind. Our books say this customer was paid and
+        # they were not, so this outranks everything else in the feed.
+        cancelled_refunds = (
+            Refund.objects.filter(gateway_refund_status=GatewayRefundStatus.CANCELLED)
+            .select_related("booking")
+            .order_by("-gateway_checked_at")
+        )
+        cancelled_rows = [
+            {
+                "id": refund.id,
+                "booking_code": refund.booking.booking_code,
+                "customer_name": refund.booking.customer_name,
+                "amount": refund.amount,
+                "reference_no": refund.reference_no,
+                "checked_at": refund.gateway_checked_at,
+            }
+            for refund in cancelled_refunds
+        ]
+
         return Response(
             {
                 "pending_cancellations": {
@@ -914,6 +945,10 @@ class StaffNotificationsView(APIView):
                         }
                         for pay in review[: self.PREVIEW]
                     ],
+                },
+                "gateway_refunds_failed": {
+                    "count": len(cancelled_rows),
+                    "items": cancelled_rows[: self.PREVIEW],
                 },
             }
         )
